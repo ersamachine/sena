@@ -161,22 +161,27 @@ function calc(sv){
   c.masTop=mas.reduce((s,m)=>s+(m.tl||0),0);
   c.kom=mas.filter(isKom).reduce((s,m)=>s+(m.tl||0),0);
   c.odeTop=ode.reduce((s,o)=>s+(o.tutar||0),0);
-  c.odeBelgesiz=ode.filter(o=>!String(o.belge||"").trim()).reduce((s,o)=>s+(o.tutar||0),0);
+  c.belgeEksik=ode.some(o=>!String(o.belge||"").trim());
+  c.odeBelgesiz=ode.filter(o=>!String(o.belge||"").trim()&&o.onay!=="Onaylandı").reduce((s,o)=>s+(o.tutar||0),0);
   c.bekleyen=mas.filter(m=>m.onay==="Onay Bekliyor");
-  c.devir=mas.filter(m=>/devir/i.test(m.kalem||"")||/devir/i.test(m.aciklama||"")).length;
+  var dvs={};mas.forEach(function(m,di){if((m.kalem||"")==="Antrepo Devir Komisyonu")dvs[m.senaNo||("_"+di)]=1;});
+  c.devir=Object.keys(dvs).length;
   var nos={};
-  mas.forEach(m=>{if(m.senaNo)nos[String(m.senaNo).replace(/\D/g,"")||m.senaNo]=1;var r;var re=/SENA[.\s-]?(\d{1,4})/gi;while((r=re.exec(m.aciklama||"")))nos[r[1]]=1;});
+  function addNos(txt){var r,re=/SENA[.\s-]?(\d{1,4}(?:\/\d{1,4})*)/gi;while((r=re.exec(txt||"")))r[1].split("/").forEach(n=>{if(n)nos[n]=1;});}
+  mas.forEach(m=>{if(m.senaNo)nos[String(m.senaNo).replace(/\D/g,"")||m.senaNo]=1;addNos(m.aciklama);});
   ode.forEach(o=>{if(o.senaNo)nos[String(o.senaNo).replace(/\D/g,"")||o.senaNo]=1;});
-  var re2=/SENA[.\s-]?(\d{1,4})/gi,r2;while((r2=re2.exec(sv.not||"")))nos[r2[1]]=1;
+  addNos(sv.not);
   c.senaNos=Object.keys(nos).filter(Boolean).sort((a,b)=>Number(a)-Number(b));
   var taban=c.air?3320:4670;
   if(/[\/+]/.test(sv.no||""))taban+=1350;
   taban+=c.devir*3670;
+  var um=String(sv.not||"").match(/\$\s?([\d.]+)/);
+  if(um){var usd=parseFloat(um[1].replace(/\./g,""))||0;if(usd>15000)taban+=Math.round((usd-15000)*0.003*44);}
   c.tarife=Math.round(taban*1.2);
   c.carpan=(c.kom>0&&c.tarife>0)?(c.kom/c.tarife):0;
   // mükerrer: aynı kalem + aynı TL birden fazla
   var seen={},dup=null;
-  mas.forEach(m=>{if(!(m.tl>0))return;var k=(m.kalem||"")+"|"+m.tl;if(seen[k])dup=dup||m;seen[k]=1;});
+  mas.forEach(m=>{if(!(m.tl>0)||!isKom(m))return;var k=(m.kalem||"")+"|"+m.tl;if(seen[k])dup=dup||m;seen[k]=1;});
   c.uyari=[];
   if(dup)c.uyari.push({w:"bad",ic:"alert-triangle",t:"Mükerrer olabilir: "+dup.kalem+" "+tl(dup.tl)});
   if(c.carpan>=4)c.uyari.push({w:"bad",ic:"alert-triangle",t:"Tarifenin ≈"+c.carpan.toFixed(1).replace(".",",")+" katı komisyon"});
@@ -192,20 +197,29 @@ function durChip(sv,c){
   return '<span class="chip lbl-warn">Gümrükte</span>';
 }
 
+function fixData(res){
+  try{
+    var list=res.sevkiyatlar||[];
+    var key=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
+    var own={};list.forEach(sv=>{if(sv.kaynak!=="panel"&&sv.no)own[key(sv.no)]=1;});
+    res.sevkiyatlar=list.filter(sv=>!(sv.kaynak==="panel"&&own[key(sv.no)]));
+  }catch(e){}
+  return res;
+}
 /* ---------- api ---------- */
 async function api(action,extra){const body=Object.assign({kod:S.kod,sifre:S.sifre,action:action},extra||{});const r=await fetch(SENA_API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)});return await r.json();}
 async function login(silent){
   if(!silent){S.kod=$("l_kod").value.trim();S.sifre=$("l_sifre").value.trim();if(!S.kod||!S.sifre){S.err="Kod ve şifre girin.";render();return;}}
   S.busy=true;S.err="";if(!silent)renderLogin();
-  try{const res=await api("data");if(res&&res.ok){S.authed=true;S.data=res;S.busy=false;
+  try{const res=await api("data");if(res&&res.ok){S.authed=true;S.data=fixData(res);S.busy=false;
     if(silent||($("l_rem")&&$("l_rem").checked)){try{localStorage.setItem("sena_kod",S.kod);localStorage.setItem("sena_sifre",S.sifre);}catch(e){}}
     render();}
   else{S.busy=false;S.authed=false;S.err=(res&&res.error)||"Giriş başarısız.";if(silent){S.kod="";S.sifre="";}renderLogin();}}
   catch(e){S.busy=false;S.err="Bağlantı hatası.";renderLogin();}
 }
 function logout(){try{localStorage.removeItem("sena_kod");localStorage.removeItem("sena_sifre");}catch(e){}S.authed=false;S.data=null;S.kod="";S.sifre="";S.sel=null;render();}
-async function reload(){S.loading=true;render();try{const r=await api("data");if(r&&r.ok)S.data=r;}catch(e){}S.loading=false;render();}
-async function act(action,extra,ok){if(S.busy)return;S.busy=true;render();try{const res=await api(action,extra);if(res&&res.ok){if(ok)toast(ok);S.busy=false;render();const r=await api("data");if(r&&r.ok){S.data=r;render();}}else{toast((res&&res.error)||"İşlem başarısız");S.busy=false;render();}}catch(e){toast("Bağlantı hatası");S.busy=false;render();}}
+async function reload(){S.loading=true;render();try{const r=await api("data");if(r&&r.ok)S.data=fixData(r);}catch(e){}S.loading=false;render();}
+async function act(action,extra,ok){if(S.busy)return;S.busy=true;render();try{const res=await api(action,extra);if(res&&res.ok){if(ok)toast(ok);S.busy=false;render();const r=await api("data");if(r&&r.ok){S.data=fixData(r);render();}}else{toast((res&&res.error)||"İşlem başarısız");S.busy=false;render();}}catch(e){toast("Bağlantı hatası");S.busy=false;render();}}
 
 /* ---------- görünümler ---------- */
 function render(){if(!S.authed){renderLogin();return;}renderMain();}
@@ -262,7 +276,7 @@ function cardHTML(sv,c){
   }
   var pct=c.masTop>0?Math.min(Math.round(c.odeTop/c.masTop*100),100):(c.odeTop>0?100:0);
   var pctBadge=c.odeTop>0?(' <span class="'+(pct>0?'grn':'rdb')+'">%'+pct+'</span>'):(c.masTop>0?' <span class="rdb">%0</span>':'');
-  var odeSub=(sv.odemeler||[]).length?((sv.odemeler||[]).length+' dekont'+(c.odeBelgesiz>0?' · belge eksik':'')):'kayıt yok';
+  var odeSub=(sv.odemeler||[]).length?((sv.odemeler||[]).length+' dekont'+(c.belgeEksik?' · belge eksik':'')):'kayıt yok';
   var pay='<div class="pay"><div class="pside"><div class="plab"><span class="pchip lbl-info">'+ti("cash","font-size:15px")+'</span>Ödenen</div>'
    +'<div class="pv mono">'+tl(c.odeTop)+pctBadge+'</div><div class="ps">'+esc(odeSub)+'</div></div>'
    +'<div class="vs">VS</div>'
