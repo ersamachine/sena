@@ -179,13 +179,8 @@ function calc(sv){
   if(um){var usd=parseFloat(um[1].replace(/\./g,""))||0;if(usd>15000)taban+=Math.round((usd-15000)*0.003*44);}
   c.tarife=Math.round(taban*1.2);
   c.carpan=(c.kom>0&&c.tarife>0)?(c.kom/c.tarife):0;
-  // mükerrer: aynı kalem + aynı TL birden fazla
-  var seen={},dup=null;
-  mas.forEach(m=>{if(!(m.tl>0)||!isKom(m))return;var k=(m.kalem||"")+"|"+m.tl;if(seen[k])dup=dup||m;seen[k]=1;});
   c.uyari=[];
-  if(dup)c.uyari.push({w:"bad",ic:"alert-triangle",t:"Mükerrer olabilir: "+dup.kalem+" "+tl(dup.tl)});
-  if(c.carpan>=4)c.uyari.push({w:"bad",ic:"alert-triangle",t:"Tarifenin ≈"+c.carpan.toFixed(1).replace(".",",")+" katı komisyon"});
-  if(c.odeBelgesiz>0)c.uyari.push({w:"warn",ic:"receipt",t:tl(c.odeBelgesiz)+" ödeme dekontsuz"});
+  if(c.odeBelgesiz>0)c.uyari.push({w:"warn",ic:"receipt",t:tl(c.odeBelgesiz)+" ödeme için dekont bekleniyor"});
   if(c.bekleyen.length)c.uyari.push({w:"warn",ic:"clock",t:c.bekleyen.length+" masraf onay bekliyor"});
   c.bad=c.uyari.some(u=>u.w==="bad");
   return c;
@@ -244,20 +239,20 @@ function renderMain(){
   $("root").innerHTML=topbar()+'<div class="wrap">'+body+'</div>'+(S.sheet?modalHTML():"");
 }
 function heroHTML(T){
-  var carpTxt=T.ortCarpan>0?("≈"+T.ortCarpan.toFixed(1).replace(".",",")+"×"):"—";
+  var pctTxt="%"+(T.mas>0?Math.min(Math.round(T.ode/T.mas*100),100):0);
   return '<div class="hero"><div style="flex:1;min-width:230px;">'
    +'<h2>Hesap özeti</h2><div class="sub">'+T.dosya+' dosya · '+(T.hd?T.hd+' hesap dışı · ':'')+'canlı veriler</div>'
    +'<div class="hgrid">'
    +'<div class="hchip"><b class="mono">'+tl(T.kom)+'</b><span>komisyon</span></div>'
    +'<div class="hchip"><b class="mono">'+tl(T.ode)+'</b><span>ödenen</span></div>'
    +'<div class="hchip"><b class="mono">'+tl(Math.max(T.mas-T.ode,0))+'</b><span>kalan</span></div>'
-   +'<div class="hchip"><b>'+T.uyari+'</b><span>uyarı</span></div>'
+   +'<div class="hchip"><b>'+T.uyari+'</b><span>bekleyen işlem</span></div>'
    +'</div></div>'
-   +'<div style="text-align:center;flex-shrink:0;margin:0 auto;"><svg width="124" height="124" viewBox="0 0 128 128" role="img" aria-label="Tarife çarpanı">'
+   +'<div style="text-align:center;flex-shrink:0;margin:0 auto;"><svg width="124" height="124" viewBox="0 0 128 128" role="img" aria-label="Ödeme oranı">'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="rgba(255,255,255,.32)" stroke-width="9" stroke-dasharray="4 8"/>'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="#fff" stroke-width="9" transform="rotate(-90 64 64)" stroke-linecap="round" opacity=".9" style="stroke-dasharray:1.8 2.2;stroke-dashoffset:27"/>'
-   +'<text x="64" y="60" text-anchor="middle" fill="#fff" font-size="21" font-weight="700" font-family="Public Sans,sans-serif">'+carpTxt+'</text>'
-   +'<text x="64" y="78" text-anchor="middle" fill="rgba(255,255,255,.85)" font-size="11" font-family="Public Sans,sans-serif">tarife çarpanı</text></svg></div></div>';
+   +'<text x="64" y="60" text-anchor="middle" fill="#fff" font-size="21" font-weight="700" font-family="Public Sans,sans-serif">'+pctTxt+'</text>'
+   +'<text x="64" y="78" text-anchor="middle" fill="rgba(255,255,255,.85)" font-size="11" font-family="Public Sans,sans-serif">ödeme oranı</text></svg></div></div>';
 }
 function cardHTML(sv,c){
   var head='<div class="head"><div class="ico '+(c.air?'lbl-info':'lbl-bad')+'">'+ti(c.air?'plane-tilt':'ship')+'</div>'
@@ -284,23 +279,16 @@ function cardHTML(sv,c){
    +'<div class="pv mono">'+(c.masTop>0?tl(c.masTop):"—")+'</div><div class="ps">'+(sv.masraflar||[]).length+' kalem</div></div></div>'
    +'<div class="sbar">'+(pct>=100?'<i style="width:100%;background:#00cfe8;"></i>':(pct<=0?'<i style="width:100%;background:#ea5455;"></i>':'<i style="width:'+pct+'%;background:#00cfe8;"></i><i style="width:2px;background:#fff;"></i><i style="flex:1;background:#ea5455;"></i>'))+'</div>';
   var trf='';
-  if(c.kom>0){
-    var col=c.carpan>=4?'#ea5455':(c.carpan>=2?'#ff9f43':'#28c76f');
-    var w=Math.min(c.carpan/6*100,100);var w2=Math.max(w-17.2,0);
-    trf='<div><div class="gr"><span>Tarife çarpanı · asgari ≈'+tl(c.tarife)+'</span><b style="color:'+col+';">≈'+c.carpan.toFixed(1).replace(".",",")+'×</b></div>'
-     +'<div class="track"><div class="fill" style="left:0;width:16.6%;background:#00cfe8;"></div>'+(w2>0?'<div class="fill" style="left:17.2%;width:'+w2+'%;background:'+col+';"></div>':'')+'</div></div>';
-  }
   var warns='<div class="warns">'+(c.uyari.length
     ?c.uyari.map(u=>'<span class="chip '+(u.w==="bad"?"lbl-bad":"lbl-warn")+'">'+ti(u.ic,"font-size:13px")+esc(u.t)+'</span>').join('')
-    :'<span class="chip lbl-ok">'+ti("circle-check","font-size:13px")+'Uyumsuzluk yok</span>')+'</div>';
+    :'<span class="chip lbl-ok">'+ti("circle-check","font-size:13px")+'Kayıtlar tam</span>')+'</div>';
   return '<div class="card'+(c.bad?' bd-bad':(c.uyari.length?' bd-warn':''))+'" data-a="open" data-id="'+esc(sv.id)+'">'+head+chain+stats+pay+trf+warns+'</div>';
 }
 function dashView(){
   const d=S.data||{};const sevs=(d.sevkiyatlar||[]);
   var list=sevs.map(sv=>({sv:sv,c:calc(sv)}));
-  var T={dosya:list.length,hd:list.filter(x=>x.c.hd).length,kom:0,ode:0,mas:0,uyari:0,tarifeT:0};
-  list.forEach(x=>{if(x.c.hd)return;T.kom+=x.c.kom;T.ode+=x.c.odeTop;T.mas+=x.c.masTop;T.uyari+=x.c.uyari.length;if(x.c.kom>0)T.tarifeT+=x.c.tarife;});
-  T.ortCarpan=T.tarifeT>0?(T.kom/T.tarifeT):0;
+  var T={dosya:list.length,hd:list.filter(x=>x.c.hd).length,kom:0,ode:0,mas:0,uyari:0};
+  list.forEach(x=>{if(x.c.hd)return;T.kom+=x.c.kom;T.ode+=x.c.odeTop;T.mas+=x.c.masTop;T.uyari+=x.c.uyari.length;});
   var f=S.filt;
   var fl=list.filter(x=>{
     if(f==="kont")return x.sv.tasima!=="Uçak Kargo";
@@ -310,14 +298,14 @@ function dashView(){
     return true;});
   var cnt={all:list.length,kont:list.filter(x=>x.sv.tasima!=="Uçak Kargo").length,air:list.filter(x=>x.sv.tasima==="Uçak Kargo").length,warn:list.filter(x=>x.c.uyari.length>0).length,hd:T.hd};
   var fp=(id,lbl)=>'<button class="fpill'+(f===id?' on':'')+'" data-a="filt" data-f="'+id+'">'+lbl+'</button>';
-  var filters='<div class="filters">'+fp("all","Tümü "+cnt.all)+fp("kont","Konteyner "+cnt.kont)+fp("air","Uçak kargo "+cnt.air)+fp("warn","Uyarılı "+cnt.warn)+(cnt.hd?fp("hd","Hesap dışı "+cnt.hd):"")
+  var filters='<div class="filters">'+fp("all","Tümü "+cnt.all)+fp("kont","Konteyner "+cnt.kont)+fp("air","Uçak kargo "+cnt.air)+fp("warn","Bekleyen "+cnt.warn)+(cnt.hd?fp("hd","Hesap dışı "+cnt.hd):"")
    +'<button class="nbtn" data-a="odeAc">'+ti("upload","font-size:14px")+'Ödeme dekontu yükle</button>'
    +'<button class="nbtn" style="background:var(--red);box-shadow:0 3px 8px rgba(234,84,85,.45);" data-a="sevAc">'+ti("plus","font-size:14px")+'Yeni sevkiyat</button></div>';
   var kpis='<div class="kpis">'
    +'<div class="kpi"><div class="kico lbl-bad">'+ti("files")+'</div><div class="kv">'+T.dosya+'</div><div class="kl">Dosya · '+cnt.kont+' konteyner, '+cnt.air+' uçak</div></div>'
    +'<div class="kpi"><div class="kico lbl-warn">'+ti("cash")+'</div><div class="kv mono">'+tl(T.kom)+'</div><div class="kl">Toplam komisyon</div></div>'
    +'<div class="kpi"><div class="kico lbl-info">'+ti("wallet")+'</div><div class="kv mono">'+tl(T.ode)+(T.mas>0?' <span class="grn">%'+Math.min(Math.round(T.ode/T.mas*100),100)+'</span>':'')+'</div><div class="kl">SENA\'ya ödenen</div></div>'
-   +'<div class="kpi"><div class="kico lbl-bad">'+ti("alert-triangle")+'</div><div class="kv" style="color:#ea5455;">'+T.uyari+'</div><div class="kl">Aktif uyarı</div></div></div>';
+   +'<div class="kpi"><div class="kico lbl-warn">'+ti("clock")+'</div><div class="kv" style="color:#f18728;">'+T.uyari+'</div><div class="kl">Bekleyen işlem</div></div></div>';
   var ships=fl.filter(x=>x.sv.tasima!=="Uçak Kargo"),airs=fl.filter(x=>x.sv.tasima==="Uçak Kargo");
   var secs='';
   if(ships.length)secs+='<div class="sec">'+ti("ship","font-size:17px;color:#ea5455")+'Konteyner dosyaları</div><div class="grid">'+ships.map(x=>cardHTML(x.sv,x.c)).join('')+'</div>';
