@@ -102,6 +102,14 @@ i.ti{line-height:1;}
 .fill{position:absolute;top:0;bottom:0;}
 .warns{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto;}
 .warns .chip{font-size:11px;padding:4px 10px;border-radius:4px;}
+.msums{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:0 0 10px;}
+.msum{padding:12px 14px;border-radius:8px;}
+.msum .l{font-size:11px;font-weight:700;letter-spacing:.3px;}
+.msum .v{font-size:17px;font-weight:700;margin-top:3px;}
+.msum .s{font-size:11px;margin-top:2px;opacity:.8;}
+.legrow{display:flex;gap:12px;align-items:center;font-size:11.5px;color:var(--muted);font-weight:500;margin:0 2px 8px;flex-wrap:wrap;}
+.legrow i{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-1px;}
+.tagS{font-size:10px;font-weight:800;padding:2px 7px;border-radius:4px;background:#ea5455;color:#fff;margin-left:6px;letter-spacing:.3px;}
 /* detail */
 .box{background:var(--card);border-radius:8px;overflow:hidden;box-shadow:var(--shadow);}
 .row{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink);}
@@ -152,6 +160,7 @@ function toast(m){var t=document.createElement("div");t.className="toast";t.text
 /* ---------- hesap motoru ---------- */
 const KOMRE=/komisyon|müşavirlik|musavirlik|devir|aktarma|antrepo beyannamesi|antrepo ücreti|antrepo ucreti|vekalet|dosya masraf|özel izin|ozel izin|ekstra|açık masraf|acik masraf/i;
 function isKom(m){if(KOMRE.test(m.kalem||""))return true;if((m.kalem||"")==="Diğer"&&/komisyon|devir|aktarma|ekstra/i.test(m.aciklama||""))return true;return false;}
+function grpOf(m){if(isKom(m))return "sena";var t=(m.kalem||"")+" "+(m.aciklama||"");if(/vergi|kdv|damga|kkdf|kültür|kultur|yolluk|memur|tse|tareks|laboratuvar/i.test(t))return "vergi";return "loj";}
 function calc(sv){
   var c={};
   c.air=(sv.tasima==="Uçak Kargo");
@@ -331,11 +340,21 @@ function detailView(){
    +(k.not?'<div style="grid-column:1 / -1;">'+f("Not",k.not)+'</div>':'')+'</div>';
   var uyari=c.uyari.length?'<div class="warns" style="margin:12px 0 0;">'+c.uyari.map(u=>'<span class="chip '+(u.w==="bad"?"lbl-bad":"lbl-warn")+'">'+ti(u.ic,"font-size:13px")+esc(u.t)+'</span>').join('')+'</div>':'';
   var mas=(k.masraflar||[]);
+  var senaT=0,vergiT=0,senaN=0;
+  mas.forEach(function(m){var g=grpOf(m);if(g==="sena"){senaT+=(m.tl||0);senaN++;}else if(g==="vergi")vergiT+=(m.tl||0);});
+  var lojT=Math.max(c.masTop-senaT-vergiT,0);
+  var payS=c.masTop>0?Math.round(senaT/c.masTop*100):0;
+  var band=mas.length?('<div class="msums">'
+   +'<div class="msum" style="background:rgba(234,84,85,.12);"><div class="l" style="color:#e0303e;">SENA KOMİSYONLARI</div><div class="v mono" style="color:#e0303e;">'+tl(senaT)+'</div><div class="s" style="color:#e0303e;">'+senaN+' kalem · dosya payı %'+payS+'</div></div>'
+   +'<div class="msum" style="background:rgba(0,207,232,.12);"><div class="l" style="color:#00a9c0;">VERGİ / RESMÎ</div><div class="v mono" style="color:#00a9c0;">'+tl(vergiT)+'</div><div class="s" style="color:#00a9c0;">KDV, damga, yolluk, TSE</div></div>'
+   +'<div class="msum" style="background:rgba(168,170,174,.14);"><div class="l" style="color:#6f6b7d;">LİMAN / LOJİSTİK</div><div class="v mono" style="color:#6f6b7d;">'+tl(lojT)+'</div><div class="s" style="color:#6f6b7d;">ardiye, nakliye, kurye, sigorta</div></div>'
+   +'</div><div class="legrow"><span><i style="background:#ea5455;"></i>SENA hizmet bedeli</span><span><i style="background:#dfe0e4;"></i>Diğer masraflar</span></div>'):'';
   var mrows=mas.map(function(m){
     var fp2=fotoParse(m.belge||"");
+    var sena=(grpOf(m)==="sena");
     var onay=(m.onay==="Reddedildi")?'<span class="pill p-r">Reddedildi</span>':(m.onay==="Onaylandı"?(m.odeme==="Ödendi"?'<span class="pill p-g">Ödendi ✓</span>':'<span class="pill p-b">Onaylandı</span>'):'<span class="pill p-o">Onay Bekliyor</span>');
-    return '<div class="row" style="align-items:center;"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(m.kalem)+(m.senaNo?' <span class="pillx" style="font-size:10px;">'+esc(m.senaNo)+'</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(m.tarih||"")+(m.aciklama?" · "+esc(m.aciklama):"")+'</div></div>'
-     +'<div style="text-align:right;width:120px;flex:0 0 auto;"><div class="mono" style="font-weight:700;">'+money(m.tutar,m.pb)+'</div>'+(m.pb!=="₺"?'<div style="font-size:10px;color:var(--muted);">≈ '+tl(m.tl)+(m.kur?' @'+m.kur:'')+'</div>':'')+'</div>'
+    return '<div class="row" style="align-items:center;border-left:3px solid '+(sena?'#ea5455':'transparent')+';'+(sena?'background:linear-gradient(90deg,rgba(234,84,85,.07),rgba(234,84,85,.02));':'')+'"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(m.kalem)+(m.senaNo?' <span class="pillx" style="font-size:10px;">'+esc(m.senaNo)+'</span>':'')+(sena?'<span class="tagS">SENA</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(m.tarih||"")+(m.aciklama?" · "+esc(m.aciklama):"")+'</div></div>'
+     +'<div style="text-align:right;width:120px;flex:0 0 auto;"><div class="mono" style="font-weight:700;'+(sena?'color:#e0303e;':'')+'">'+money(m.tutar,m.pb)+'</div>'+(m.pb!=="₺"?'<div style="font-size:10px;color:var(--muted);">≈ '+tl(m.tl)+(m.kur?' @'+m.kur:'')+'</div>':'')+'</div>'
      +'<div style="width:100px;text-align:center;flex:0 0 auto;">'+onay+'</div>'
      +'<div style="width:30px;display:flex;justify-content:flex-end;flex:0 0 auto;">'+(fp2.urls.length?'<span style="cursor:pointer;padding:5px;color:#3b82f6;font-size:15px;" data-a="foto" data-url="'+esc(fp2.urls[0])+'" title="Belgeyi gör">'+ti("eye")+'</span>':'')+'</div></div>';
   }).join('')||'<div class="empty">Bu sevkiyata henüz masraf eklenmedi.</div>';
@@ -349,13 +368,14 @@ function detailView(){
      +'<div style="width:100px;text-align:center;flex:0 0 auto;">'+op+'</div>'
      +'<div style="width:30px;display:flex;justify-content:flex-end;flex:0 0 auto;">'+(fp3.urls.length?'<span style="cursor:pointer;padding:5px;color:#00a9c0;font-size:15px;" data-a="foto" data-url="'+esc(fp3.urls[0])+'" title="Dekontu gör">'+ti("eye")+'</span>':'<span style="color:#f18728;font-size:15px;" title="Belge yok">'+ti("alert-triangle")+'</span>')+'</div></div>';
   }).join('')||'<div class="empty">Henüz ödeme kaydı yok. "Ödeme Ekle" ile dekont yükleyin.</div>';
-  var foot='<div class="row" style="background:var(--card2);align-items:center;"><div class="grow" style="font-size:11.5px;color:var(--muted);font-weight:600;">'+mas.length+' kalem · komisyon '+tl(c.kom)+' · ödenen '+tl(c.odeTop)+'</div><div style="text-align:right;"><div style="font-size:10.5px;color:var(--muted);font-weight:700;">TOPLAM GÜMRÜK MALİYETİ</div><div class="mono" style="font-size:19px;font-weight:800;color:#ea5455;">'+tl(c.masTop)+'</div></div></div>';
+  var foot='<div class="row" style="background:var(--card2);align-items:center;"><div class="grow" style="font-size:11.5px;color:var(--muted);font-weight:600;">'+mas.length+' kalem · <span style="color:#e0303e;font-weight:700;">SENA '+tl(senaT)+'</span> · diğer '+tl(Math.max(c.masTop-senaT,0))+' · ödenen '+tl(c.odeTop)+'</div><div style="text-align:right;"><div style="font-size:10.5px;color:var(--muted);font-weight:700;">TOPLAM GÜMRÜK MALİYETİ</div><div class="mono" style="font-size:19px;font-weight:800;color:#ea5455;">'+tl(c.masTop)+'</div></div></div>';
   return '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin:16px 0 10px;"><span class="back" data-a="back">'+ti("chevron-left")+' Sevkiyat listesine dön</span>'+durChip(k,c)+'</div>'
    +'<div class="sec" style="margin-top:4px;">'+ti(air?"plane-tilt":"ship","font-size:17px;color:#ea5455")+esc(k.no||"Dosya")+'</div>'
    +'<div class="box" style="padding:16px 18px;">'+info+uyari+'</div>'
    +'<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;"><div class="sec" style="margin:0;">'+ti("cash","font-size:16px;color:#00a9c0")+'Ödemeler'+(c.odeTop>0?' <span class="grn">'+tl(c.odeTop)+'</span>':'')+'</div><button class="btn b-cy" data-a="odeAc" data-id="'+esc(k.id)+'">'+ti("upload","font-size:14px")+' Ödeme Ekle</button></div>'
    +'<div class="box">'+orows+'</div>'
    +'<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;"><div class="sec" style="margin:0;">'+ti("receipt","font-size:16px;color:#ea5455")+'Masraf Kalemleri</div><button class="btn b-on" data-a="masAc" data-id="'+esc(k.id)+'">'+ti("plus","font-size:14px")+' Masraf Ekle</button></div>'
+   +band
    +'<div class="box">'+mrows+foot+'</div>';
 }
 /* ---------- modaller ---------- */
