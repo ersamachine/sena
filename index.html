@@ -166,6 +166,13 @@ window.SENA_API_URL = window.SENA_API_URL || "SENA_APPS_SCRIPT_URL_BURAYA";
 const $=id=>document.getElementById(id);
 const S={kod:"",sifre:"",authed:false,data:null,busy:false,loading:false,sel:null,sheet:null,sheetData:null,err:"",filt:"all",kpiPanel:null};
 try{S.kod=localStorage.getItem("sena_kod")||"";S.sifre=localStorage.getItem("sena_sifre")||"";}catch(e){}
+/* ===== V11 ANINDA AÇILIŞ — son görünüm cihazda saklanır, yenilemede beyaz ekran yerine anında gelir ===== */
+function dataKaydet(d){try{localStorage.setItem("sena_cache",JSON.stringify(d));}catch(e){try{localStorage.removeItem("sena_cache");}catch(_){}}}
+function dataOku(){try{var s=localStorage.getItem("sena_cache");return s?JSON.parse(s):null;}catch(e){return null;}}
+function staleGoster(v){var el=document.getElementById("staleBar");
+  if(v){if(!el){el=document.createElement("div");el.id="staleBar";el.style.cssText="position:fixed;top:0;left:0;right:0;z-index:9999;background:#FFF3E0;color:#B26A00;font:600 11px 'Public Sans',system-ui,sans-serif;text-align:center;padding:4px 8px;box-shadow:0 1px 4px rgba(0,0,0,.08);";el.textContent="Kayıtlı görünüm gösteriliyor — güncel veriler arka planda yükleniyor…";document.body.appendChild(el);}}
+  else if(el){el.remove();}}
+function bekleGoster(){var r=$("root");if(r)r.innerHTML='<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;"><div style="width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#7367f0,#9e95f5);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;box-shadow:0 4px 18px rgba(115,103,240,.4);">S</div><div class="spin"></div><div style="color:#6e6b7b;font-size:12px;font-weight:600;">Bağlanıyor…</div></div>';}
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
 const money=(n,c)=>{n=Number(n)||0;const r=Math.round(Math.abs(n)*100)/100;return (n<0?'-':'')+(c||"₺")+r.toLocaleString("tr-TR",{minimumFractionDigits:(r%1!==0)?2:0,maximumFractionDigits:2});};
 const tl=n=>money(n,"₺");
@@ -233,15 +240,15 @@ async function api(action,extra){const body=Object.assign({kod:S.kod,sifre:S.sif
 async function login(silent){
   if(!silent){S.kod=$("l_kod").value.trim();S.sifre=$("l_sifre").value.trim();if(!S.kod||!S.sifre){S.err="Kod ve şifre girin.";render();return;}}
   S.busy=true;S.err="";if(!silent)renderLogin();
-  try{const res=await api("data");if(res&&res.ok){S.authed=true;S.data=fixData(res);S.busy=false;
+  try{const res=await api("data");if(res&&res.ok){S.authed=true;S.data=fixData(res);dataKaydet(S.data);S.busy=false;
     if(silent||($("l_rem")&&$("l_rem").checked)){try{localStorage.setItem("sena_kod",S.kod);localStorage.setItem("sena_sifre",S.sifre);}catch(e){}}
     render();}
-  else{S.busy=false;S.authed=false;S.err=(res&&res.error)||"Giriş başarısız.";if(silent){S.kod="";S.sifre="";}renderLogin();}}
+  else{S.busy=false;S.authed=false;S.err=(res&&res.error)||"Giriş başarısız.";if(silent){S.kod="";S.sifre="";try{localStorage.removeItem("sena_cache");}catch(e){}}renderLogin();}}
   catch(e){S.busy=false;S.err="Bağlantı hatası.";renderLogin();}
 }
-function logout(){try{localStorage.removeItem("sena_kod");localStorage.removeItem("sena_sifre");}catch(e){}S.authed=false;S.data=null;S.kod="";S.sifre="";S.sel=null;render();}
-async function reload(){S.loading=true;render();try{const r=await api("data");if(r&&r.ok)S.data=fixData(r);}catch(e){}S.loading=false;render();}
-async function act(action,extra,ok){if(S.busy)return;S.busy=true;render();try{const res=await api(action,extra);if(res&&res.ok){if(ok)toast(ok);S.busy=false;render();const r=await api("data");if(r&&r.ok){S.data=fixData(r);render();}}else{toast((res&&res.error)||"İşlem başarısız");S.busy=false;render();}}catch(e){toast("Bağlantı hatası");S.busy=false;render();}}
+function logout(){try{localStorage.removeItem("sena_kod");localStorage.removeItem("sena_sifre");localStorage.removeItem("sena_cache");}catch(e){}S.authed=false;S.data=null;S.kod="";S.sifre="";S.sel=null;render();}
+async function reload(){S.loading=true;render();try{const r=await api("data");if(r&&r.ok){S.data=fixData(r);dataKaydet(S.data);}}catch(e){}S.loading=false;render();}
+async function act(action,extra,ok){if(S.busy)return;S.busy=true;render();try{const res=await api(action,extra);if(res&&res.ok){if(ok)toast(ok);S.busy=false;render();const r=await api("data");if(r&&r.ok){S.data=fixData(r);dataKaydet(S.data);render();}}else{toast((res&&res.error)||"İşlem başarısız");S.busy=false;render();}}catch(e){toast("Bağlantı hatası");S.busy=false;render();}}
 
 /* ---------- görünümler ---------- */
 function render(){if(!S.authed){renderLogin();return;}renderMain();}
@@ -504,7 +511,16 @@ document.addEventListener("click",function(e){
 document.addEventListener("input",function(e){if(e.target.closest("[data-calc]"))masCalc();});
 document.addEventListener("change",function(e){if(e.target.id==="m_file")pickBelge(e,"m_strip");if(e.target.id==="o_file")pickBelge(e,"o_strip");});
 
-if(S.kod&&S.sifre){login(true);}else{render();}
+/* V11: kayıtlı giriş varsa önce cihazdaki son görünüm ANINDA gelir, güncel veri arka planda yüklenir */
+if(S.kod&&S.sifre){
+  var _cc=dataOku();
+  if(_cc){ S.authed=true; S.data=_cc; render(); staleGoster(true);
+    api("data").then(function(r){ staleGoster(false);
+      if(r&&r.ok){ S.data=fixData(r); dataKaydet(S.data); render(); }
+      else { S.authed=false; S.data=null; S.kod=""; S.sifre=""; try{localStorage.removeItem("sena_kod");localStorage.removeItem("sena_sifre");localStorage.removeItem("sena_cache");}catch(e){} S.err=(r&&r.error)||""; renderLogin(); }
+    }).catch(function(){ staleGoster(false); toast("Güncel veriler alınamadı — kayıtlı görünüm gösteriliyor"); });
+  } else { bekleGoster(); login(true); }
+}else{render();}
 </script>
 </body>
 </html>
