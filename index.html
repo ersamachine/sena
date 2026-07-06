@@ -293,12 +293,12 @@ function heroHTML(T){
    : '<div class="stt pos2"><p class="l">Fazla ödeme</p><p class="v mono">'+tl(Math.abs(net))+'</p><p class="s">lehimize</p></div>';
   var ardV=(ard>0)?('<span class="mono">'+tl(ard)+'</span>'):'<span style="color:rgba(255,255,255,.55);">—</span>';
   var ardS=((T.ardB||0)>0)?('<span class="mini2">dekont bekleniyor</span> SENA yükleyecek'):((ard>0)?'dekontlu kalemler':'kayıt yok');
-  var frm='Hesap: komisyon <b>'+tl(T.kom)+'</b>'+(ard>0?(' + SENA ardiyesi <b>'+tl(ard)+'</b>'):'')+' − ödenen <b>'+tl(T.ode)+'</b>'+((T.ardB||0)>0?' · ardiye dekontları yüklendikçe hesaba eklenir':'');
+  var frm='Hesap: komisyon <b>'+tl(T.kom)+'</b>'+(ard>0?(' + SENA masrafları <b>'+tl(ard)+'</b>'):'')+' − ödenen <b>'+tl(T.ode)+'</b>'+((T.ardB||0)>0?' · masraf dekontları yüklendikçe hesaba eklenir':'');
   return '<div class="hero"><div class="hwrap"><div style="flex:1;min-width:260px;">'
    +'<h2>Hesap özeti</h2><div class="sub">'+T.dosya+' dosya · '+(T.hd?T.hd+' hesap dışı · ':'')+'canlı veriler</div>'
    +'<div class="hstrip">'
    +'<div class="stt"><p class="l">SENA komisyonları</p><p class="v mono">'+tl(T.kom)+'</p><p class="s">e-faturalı hizmet bedelleri</p></div>'
-   +'<div class="stt"><p class="l">SENA\'nın ödediği ardiye</p><p class="v">'+ardV+'</p><p class="s">'+ardS+'</p></div>'
+   +'<div class="stt"><p class="l">SENA tarafından ödenen masraflar</p><p class="v">'+ardV+'</p><p class="s">'+ardS+'</p></div>'
    +'<div class="stt"><p class="l">SENA\'ya ödenen</p><p class="v mono">'+tl(T.ode)+'</p><p class="s">'+(T.odmN||0)+' dekont · banka kayıtlı</p></div>'
    +sonuc
    +'</div>'
@@ -383,7 +383,23 @@ function dashView(){
   if(ships.length)secs+='<div class="sec">'+ti("ship","font-size:17px;color:#ea5455")+'Konteyner dosyaları</div><div class="grid">'+ships.map(x=>cardHTML(x.sv,x.c)).join('')+'</div>';
   if(airs.length)secs+='<div class="sec">'+ti("plane-tilt","font-size:17px;color:#00a9c0")+'Uçak kargo dosyaları</div><div class="grid">'+airs.map(x=>cardHTML(x.sv,x.c)).join('')+'</div>';
   if(!secs)secs='<div class="box"><div class="empty">'+(list.length?'Bu filtrede dosya yok.':'Henüz sevkiyat yok. "Yeni sevkiyat" ile başlayın.')+'</div></div>';
-  return heroHTML(T)+kpis+kp+filters+secs;
+  /* V14 · PANELDEN DÖNEN KALEMLER — reddedilen ve düzeltme istenen masraflar sebep/notuyla, tek tıkla düzeltilip yeniden onaya gönderilir */
+  var donen=[];
+  ((S.data&&S.data.sevkiyatlar)||[]).forEach(function(sv){ (sv.masraflar||[]).forEach(function(m){
+    if(m.onay==="Reddedildi"||m.onay==="Düzeltme Bekleniyor") donen.push({m:m,no:sv.no||""}); }); });
+  var donenBox='';
+  if(donen.length){
+    donenBox='<div class="sec">'+ti("alert-triangle","font-size:17px;color:#E07B00")+'Panelden dönen kalemler <span style="margin-left:6px;background:rgba(255,159,67,.16);color:#E07B00;font-size:11px;font-weight:800;border-radius:20px;padding:2px 9px;">'+donen.length+'</span></div>'
+      +'<div class="box" style="margin-bottom:16px;">'+donen.map(function(x){ var m=x.m; var red=(m.onay==="Reddedildi");
+        return '<div class="row" style="flex-wrap:wrap;gap:8px;">'
+          +'<div style="flex:1;min-width:200px;"><div style="font-weight:800;color:var(--head);">'+esc(m.kalem)+' · <span class="mono">'+Math.round(m.tl||0).toLocaleString("tr-TR")+' ₺</span></div>'
+          +'<div style="font-size:11px;color:var(--muted);">'+esc([x.no,m.tarih,m.senaNo?("SENA."+m.senaNo):""].filter(Boolean).join(" · "))+'</div></div>'
+          +'<span class="pill" style="background:'+(red?'rgba(234,84,85,.14)':'rgba(255,159,67,.16)')+';color:'+(red?'#EA5455':'#E07B00')+';">'+(red?'Reddedildi':'Düzeltme İstendi')+'</span>'
+          +'<button class="btnred" style="width:auto;margin:0;padding:9px 14px;font-size:12.5px;" data-a="fixAc" data-id="'+esc(m.id)+'">'+ti("send","font-size:14px")+' Düzelt & Yeniden Gönder</button>'
+          +(m.not?'<div style="flex-basis:100%;background:'+(red?'rgba(234,84,85,.08)':'rgba(255,159,67,.1)')+';border:1px solid '+(red?'rgba(234,84,85,.3)':'rgba(255,159,67,.35)')+';border-radius:8px;padding:8px 12px;font-size:12px;color:'+(red?'#c2454a':'#9A5B00')+';font-weight:600;">ERSA notu: '+esc(m.not)+'</div>':'')
+        +'</div>'; }).join('')+'</div>';
+  }
+  return heroHTML(T)+donenBox+kpis+kp+filters+secs;
 }
 function detailView(){
   const d=S.data||{};const list=(d.sevkiyatlar||[]);var k=null;
@@ -473,6 +489,19 @@ function modalHTML(){
      +'<button class="btnred" data-a="masKaydet" '+(S.busy?'disabled':'')+'>'+ti("send","font-size:16px")+' Onaya Gönder</button>'
      +'<div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center;">Gönderdikten sonra ERSA onayına düşer; düzenleyemezsin.</div></div></div>';
   }
+  if(S.sheet==="fix"){
+    /* V14 · panelden dönen masrafı düzelt & yeniden onaya gönder */
+    const sd=S.sheetData||{};const isTL=((sd.pb||"₺")==="₺");
+    return '<div class="ovl" data-a="close"><div class="modal" data-stop="1"><div class="mh"><div class="t">Düzelt & Yeniden Gönder</div><div style="cursor:pointer;font-size:20px;color:#999;" data-a="close">'+ti("x")+'</div></div>'
+     +'<div style="background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:10px 13px;margin-bottom:2px;font-size:12px;color:var(--muted);">'+esc(sd.kalem||"")+' · <b style="color:var(--head);">'+Math.round(sd.tl||0).toLocaleString("tr-TR")+' ₺</b>'+(sd.no?' · '+esc(sd.no):'')+'</div>'
+     +(sd.not?'<div style="background:rgba(255,159,67,.1);border:1px solid rgba(255,159,67,.35);border-radius:9px;padding:9px 13px;margin-top:8px;font-size:12px;color:#9A5B00;font-weight:600;">ERSA notu: '+esc(sd.not)+'</div>':'')
+     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;"><div><label class="lbl">Tutar ('+esc(sd.pb||"₺")+')</label><input id="f_tut" class="field" inputmode="decimal" value="'+esc(sd.tutar||"")+'"></div>'
+     +'<div style="display:'+(isTL?"none":"block")+';"><label class="lbl">Kur (1 '+esc(sd.pb)+' = ? ₺)</label><input id="f_kur" class="field" inputmode="decimal" value="'+esc(sd.kur||"")+'"></div></div>'
+     +'<label class="lbl">Açıklama</label><input id="f_ack" class="field" value="'+esc(sd.aciklama||"")+'">'
+     +'<label class="lbl">Yeni dekont ekle (foto veya PDF)</label><div id="f_strip" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"></div><label class="updrop" for="f_file">'+ti("photo","font-size:16px;color:#ea5455")+' Dosya seç</label><input id="f_file" type="file" accept="image/*,application/pdf" multiple style="display:none;" onchange="pickBelge(event,\'f_strip\')">'
+     +'<button class="btnred" data-a="fixKaydet" '+(S.busy?'disabled':'')+'>'+ti("send","font-size:16px")+' Yeniden Onaya Gönder</button>'
+     +'<div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center;">Yeni dekont mevcut belgeye eklenir; kalem tekrar ERSA onayına düşer.</div></div></div>';
+  }
   if(S.sheet==="ode"){
     const sd=S.sheetData||{};const today=new Date().toISOString().slice(0,10);
     const sevs=(d.sevkiyatlar||[]);
@@ -515,6 +544,14 @@ document.addEventListener("click",function(e){
   if(a==="pbSel"){var sd=S.sheetData||{};sd.tutar=($("m_tut")||{}).value||sd.tutar;sd.kur=($("m_kur")||{}).value||sd.kur;sd.aciklama=($("m_ack")||{}).value||sd.aciklama;sd.senaNo=($("m_sena")||{}).value||sd.senaNo;sd.pb=el.getAttribute("data-pb");S.sheetData=sd;render();return;}
   if(a==="sevKaydet"){var data={tasima:(S.sheetData||{}).tasima||"Konteyner",no:$("s_no").value.trim(),tip:$("s_tip").value.trim(),gelis:$("s_gelis").value,urun:$("s_urun").value.trim(),tedarikci:$("s_ted").value.trim(),bl:$("s_bl").value.trim(),beyanname:$("s_bey").value.trim(),liman:$("s_liman").value.trim(),durum:$("s_dur").value,not:$("s_not").value.trim()};if(!data.no){toast("Konteyner/AWB no gerekli");return;}S.sheet=null;S.sheetData=null;act("sevkiyatEkle",{data:data},"Sevkiyat eklendi ✓");return;}
   if(a==="masKaydet"){var md=S.sheetData||{};var pb=md.pb||"₺";var tutar=parseFloat(String($("m_tut").value||"").replace(",","."))||0;if(!(tutar>0)){toast("Tutar gerekli");return;}var kur=parseFloat(String(($("m_kur")||{}).value||"").replace(",","."))||0;if(pb!=="₺"&&!(kur>0)){toast("Döviz için kur gir");return;}var mdata={sevkiyatId:md.sevkiyatId,kalem:$("m_kalem").value,tutar:String(tutar),pb:pb,kur:kur,tarih:$("m_tar").value,aciklama:$("m_ack").value.trim(),senaNo:$("m_sena").value.trim(),belgeler:(window.__belge||[]).slice()};S.sheet=null;S.sheetData=null;window.__belge=[];act("masrafEkle",{data:mdata},"Masraf onaya gönderildi ✓");return;}
+  if(a==="fixAc"){e.stopPropagation();var fid=el.getAttribute("data-id");var fm=null,fno="";
+    ((S.data&&S.data.sevkiyatlar)||[]).forEach(function(sv){ (sv.masraflar||[]).forEach(function(m){ if(m.id===fid){fm=m;fno=sv.no||"";} }); });
+    if(!fm){toast("Kayıt bulunamadı");return;}
+    window.__belge=[];S.sheet="fix";S.sheetData={id:fm.id,kalem:fm.kalem,tl:fm.tl,pb:fm.pb||"₺",tutar:fm.tutar,kur:fm.kur,aciklama:fm.aciklama,not:fm.not,no:fno};render();return;}
+  if(a==="fixKaydet"){var fd=S.sheetData||{};var ft=parseFloat(String(($("f_tut")||{}).value||"").replace(",","."))||0;var fk=parseFloat(String(($("f_kur")||{}).value||"").replace(",","."))||0;
+    if((fd.pb||"₺")!=="₺"&&ft>0&&!(fk>0)){toast("Döviz için kur gir");return;}
+    var fdata={id:fd.id,tutar:String(ft||""),pb:fd.pb||"₺",kur:fk,aciklama:($("f_ack")||{}).value||"",belgeler:(window.__belge||[]).slice()};
+    S.sheet=null;S.sheetData=null;window.__belge=[];act("masrafDuzelt",{data:fdata},"Düzeltildi — yeniden onaya gönderildi ✓");return;}
   if(a==="odeKaydet"){var otutar=parseFloat(String($("o_tut").value||"").replace(",","."))||0;if(!(otutar>0)){toast("Tutar gerekli");return;}var osev=$("o_sev").value;if(!osev){toast("Sevkiyat seç");return;}var odata={sevkiyatId:osev,tutar:String(otutar),tarih:$("o_tar").value,senaNo:$("o_sena").value.trim(),aciklama:$("o_ack").value.trim(),belgeler:(window.__belge||[]).slice()};S.sheet=null;S.sheetData=null;window.__belge=[];act("odemeEkle",{data:odata},"Ödeme kaydedildi ✓");return;}
 });
 document.addEventListener("input",function(e){if(e.target.closest("[data-calc]"))masCalc();});
