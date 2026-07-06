@@ -193,7 +193,16 @@ function calc(sv){
   c.masTop=mas.reduce((s,m)=>s+(m.tl||0),0);
   c.kom=mas.filter(isKom).reduce((s,m)=>s+(m.tl||0),0);
   c.senaArd=0;c.senaArdBek=0;
-  mas.forEach(function(m){ if(/SENA öded/i.test(m.aciklama||"")){ if(String(m.belge||"").trim())c.senaArd+=(m.tl||0); else c.senaArdBek++; } });
+  /* V12 — panel V109 ile AYNI kural: eski birebir "SENA öded" kalıbı gerçek açıklamaları
+     ("SENA GÜMRÜK TARAFINDAN ÖDENMİŞTİR/YATIRILMIŞTIR") yakalamıyordu. Yeni: açıklamada
+     "sena"+("öde"/"yatır") YA DA kalem ardiye/antrepo; tutara yalnız Onaylandı+dekontlu girer. */
+  mas.forEach(function(m){
+    var a=String(m.aciklama||"").toLocaleLowerCase("tr"), kal=String(m.kalem||"").toLocaleLowerCase("tr");
+    var senaPaid=(a.indexOf("sena")>=0 && (a.indexOf("öde")>=0||a.indexOf("yatır")>=0||a.indexOf("yatir")>=0)) || kal.indexOf("ardiye")>=0 || kal.indexOf("antrepo")>=0;
+    if(!senaPaid) return;
+    if(m.onay==="Reddedildi") return;
+    if(m.onay==="Onaylandı" && String(m.belge||"").trim()) c.senaArd+=(m.tl||0); else c.senaArdBek++;
+  });
   c.odeTop=ode.reduce((s,o)=>s+(o.tutar||0),0);
   c.belgeEksik=ode.some(o=>!String(o.belge||"").trim());
   c.odeBelgesiz=ode.filter(o=>!String(o.belge||"").trim()&&o.onay!=="Onaylandı").reduce((s,o)=>s+(o.tutar||0),0);
