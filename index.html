@@ -184,6 +184,10 @@ function toast(m){var t=document.createElement("div");t.className="toast";t.text
 const KOMRE=/komisyon|müşavirlik|musavirlik|devir|aktarma|antrepo beyannamesi|antrepo ücreti|antrepo ucreti|vekalet|dosya masraf|özel izin|ozel izin|ekstra|açık masraf|acik masraf/i;
 function isKom(m){if(KOMRE.test(m.kalem||""))return true;if((m.kalem||"")==="Diğer"&&/komisyon|devir|aktarma|ekstra/i.test(m.aciklama||""))return true;return false;}
 function grpOf(m){if(isKom(m))return "sena";var t=(m.kalem||"")+" "+(m.aciklama||"");if(/vergi|kdv|damga|kkdf|kültür|kultur|yolluk|memur|tse|tareks|laboratuvar/i.test(t))return "vergi";return "loj";}
+/* V18: "SENA'nın onaya gönderdiği" tespiti ID ile — masrafEkle newId("SM") üretir.
+   Seed/tarihî kayıtlar "SDM…", panel kalemleri ID'siz gelir; kaynak alanı bu ayrımı veremez
+   (seed kayıtları da Sena Masraf sayfasında ve Onaylandı yazılı — V17'nin ₺4,37M hatasının sebebi). */
+function snKay(m){return String((m&&m.id)||"").lastIndexOf("SM",0)===0;}
 function calc(sv){
   var c={};
   c.air=(sv.tasima==="Uçak Kargo");
@@ -191,17 +195,20 @@ function calc(sv){
   c.acik=(sv.durum!=="Çekildi / Kapandı");
   var mas=sv.masraflar||[],ode=sv.odemeler||[];
   c.masTop=mas.reduce((s,m)=>s+(m.tl||0),0);
-  c.kom=mas.filter(isKom).reduce((s,m)=>s+(m.tl||0),0);
-  c.senaArd=0;c.senaArdBek=0;
-  /* V12 — panel V109 ile AYNI kural: eski birebir "SENA öded" kalıbı gerçek açıklamaları
-     ("SENA GÜMRÜK TARAFINDAN ÖDENMİŞTİR/YATIRILMIŞTIR") yakalamıyordu. Yeni: açıklamada
-     "sena"+("öde"/"yatır") YA DA kalem ardiye/antrepo; tutara yalnız Onaylandı+dekontlu girer. */
+  /* V18 — YAPISAL AYRIM (ERSA kararı): SM id'li kayıt = SENA'nın onaya gönderdiği; gerisi eski defter.
+     · Komisyon = SENA'nın göndermediği (panel + seed/tarihî) isKom kalemleri — "daha önce yazılanlar".
+     · "SENA tarafından ödenen" = yalnız SM kayıtları; Onaylandı ise tutara girer,
+       Onay Bekliyor ise sayaçta, Red/Düzeltme "Panelden dönenler"de.
+     Eski V12 açıklama-bazlı kural kalktı — panel/seed kayıtlarını da yakalayıp karıştırıyordu. */
+  c.kom=mas.filter(function(m){return !snKay(m)&&isKom(m);}).reduce((s,m)=>s+(m.tl||0),0);
+  c.senaArd=0;c.senaArdBek=0;c.senaPayNos={};
   mas.forEach(function(m){
-    var a=String(m.aciklama||"").toLocaleLowerCase("tr"), kal=String(m.kalem||"").toLocaleLowerCase("tr");
-    var senaPaid=(a.indexOf("sena")>=0 && (a.indexOf("öde")>=0||a.indexOf("yatır")>=0||a.indexOf("yatir")>=0)) || kal.indexOf("ardiye")>=0 || kal.indexOf("antrepo")>=0;
-    if(!senaPaid) return;
-    if(m.onay==="Reddedildi") return;
-    if(m.onay==="Onaylandı" && String(m.belge||"").trim()) c.senaArd+=(m.tl||0); else c.senaArdBek++;
+    if(!snKay(m)) return;
+    var st1=m.onay||"Onay Bekliyor";
+    if(st1==="Onaylandı"){
+      c.senaArd+=(m.tl||0);
+      if(m.senaNo)c.senaPayNos[String(m.senaNo).replace(/\D/g,"")||m.senaNo]=1;
+    }else if(st1==="Onay Bekliyor")c.senaArdBek++;
   });
   c.odeTop=ode.reduce((s,o)=>s+(o.tutar||0),0);
   c.belgeEksik=ode.some(o=>!String(o.belge||"").trim());
@@ -281,30 +288,33 @@ function renderMain(){
   else{body=S.sel?detailView():dashView();}
   $("root").innerHTML=topbar()+'<div class="wrap">'+body+'</div>'+(S.sheet?modalHTML():"");
 }
+/* V21 · YENİ HESAP MODELİ (ERSA kararı): Gönderdiğin paralar bir HAVUZ; SENA'nın ödediği
+   ONAYLI masraflar bu havuzdan DÜŞÜLÜR → kalan = SENA'da duran para (eksiyse SENA'nın alacağı).
+   KOMİSYONLAR bu hesaba KARIŞMAZ — ayrı hesap olarak yalnız gösterilir (ayrıca incelenecek). */
 function heroHTML(T){
-  var ard=(T.ard||0);
-  var borc=(T.kom||0)+ard;
-  var net=borc-(T.ode||0);
-  var pct=borc>0?Math.min(Math.round(T.ode/borc*100),100):(T.ode>0?100:0);
-  var ringCol=(pct>=100&&(T.ode>0))?"#8effc0":"#fff";
-  var ringLbl=(pct>=100&&T.ode>0)?"borç karşılandı":"ödeme oranı";
-  var sonuc=(net>0)
-   ? '<div class="stt"><p class="l">Kalan borç</p><p class="v mono">'+tl(net)+'</p><p class="s">ödenecek</p></div>'
-   : '<div class="stt pos2"><p class="l">Fazla ödeme</p><p class="v mono">'+tl(Math.abs(net))+'</p><p class="s">lehimize</p></div>';
+  var ard=(T.ard||0), havuz=(T.ode||0), kalan=havuz-ard;
+  var pct=havuz>0?Math.min(Math.round(ard/havuz*100),100):(ard>0?100:0);
+  var ringCol=(kalan<0)?"#ffd6d6":"#fff";
+  var ringLbl="para kullanımı";
+  var sonuc=(kalan>=0)
+   ? '<div class="stt pos2"><p class="l">SENA\'da kalan paran</p><p class="v mono">'+tl(kalan)+'</p><p class="s">gönderdiklerinden harcanmayan</p></div>'
+   : '<div class="stt"><p class="l">SENA\'nın alacağı</p><p class="v mono">'+tl(Math.abs(kalan))+'</p><p class="s">masraflar gönderdiğin parayı aştı</p></div>';
   var ardV=(ard>0)?('<span class="mono">'+tl(ard)+'</span>'):'<span style="color:rgba(255,255,255,.55);">—</span>';
-  var ardS=((T.ardB||0)>0)?('<span class="mini2">dekont bekleniyor</span> SENA yükleyecek'):((ard>0)?'dekontlu kalemler':'kayıt yok');
-  var frm='Hesap: komisyon <b>'+tl(T.kom)+'</b>'+(ard>0?(' + SENA masrafları <b>'+tl(ard)+'</b>'):'')+' − ödenen <b>'+tl(T.ode)+'</b>'+((T.ardB||0)>0?' · masraf dekontları yüklendikçe hesaba eklenir':'');
+  var ardS=((T.ardB||0)>0)?('<span class="mini2">'+T.ardB+' kalem onayda</span> onaylayınca düşülür'):((ard>0)?'onayladıkların · paradan düşüldü':'kayıt yok');
+  var frm='Hesap: gönderdiğin <b>'+tl(havuz)+'</b> − SENA\'nın ödediği <b>'+tl(ard)+'</b> = <b>'+tl(kalan)+'</b>'
+   +((T.ardB||0)>0?' · '+T.ardB+' kalem onay bekliyor':'')
+   +' &nbsp;•&nbsp; Komisyonlar (<b>'+tl(T.kom)+'</b>) bu hesaba DAHİL DEĞİL — ayrı hesap';
   return '<div class="hero"><div class="hwrap"><div style="flex:1;min-width:260px;">'
-   +'<h2>Hesap özeti</h2><div class="sub">'+T.dosya+' dosya · '+(T.hd?T.hd+' hesap dışı · ':'')+'canlı veriler</div>'
+   +'<h2>Masraf hesabı</h2><div class="sub">'+T.dosya+' dosya · '+(T.hd?T.hd+' hesap dışı · ':'')+'canlı veriler</div>'
    +'<div class="hstrip">'
-   +'<div class="stt"><p class="l">SENA komisyonları</p><p class="v mono">'+tl(T.kom)+'</p><p class="s">e-faturalı hizmet bedelleri</p></div>'
+   +'<div class="stt"><p class="l">Gönderdiğin paralar</p><p class="v mono">'+tl(havuz)+'</p><p class="s">'+(T.odmN||0)+' dekont · banka kayıtlı</p></div>'
    +'<div class="stt"><p class="l">SENA tarafından ödenen masraflar</p><p class="v">'+ardV+'</p><p class="s">'+ardS+'</p></div>'
-   +'<div class="stt"><p class="l">SENA\'ya ödenen</p><p class="v mono">'+tl(T.ode)+'</p><p class="s">'+(T.odmN||0)+' dekont · banka kayıtlı</p></div>'
    +sonuc
+   +'<div class="stt" style="border-left:1px dashed rgba(255,255,255,.35);"><p class="l">SENA komisyonları · AYRI HESAP</p><p class="v mono" style="opacity:.9;">'+tl(T.kom)+'</p><p class="s">bu hesaba dahil değil · ayrıca incelenecek</p></div>'
    +'</div>'
    +'<div class="hfrm">'+frm+'</div>'
    +'</div>'
-   +'<div style="text-align:center;flex-shrink:0;margin:0 auto;"><svg width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Borç karşılama">'
+   +'<div style="text-align:center;flex-shrink:0;margin:0 auto;"><svg width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Para kullanımı">'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="9" stroke-dasharray="4 8"/>'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="'+ringCol+'" stroke-width="9" transform="rotate(-90 64 64)" stroke-linecap="round" opacity=".95" style="stroke-dasharray:1.8 2.2;stroke-dashoffset:27"/>'
    +'<text x="64" y="60" text-anchor="middle" fill="#fff" font-size="22" font-weight="700" font-family="Public Sans,sans-serif">%'+pct+'</text>'
@@ -315,8 +325,9 @@ function cardHTML(sv,c){
    +'<div style="flex:1;min-width:0;"><div class="tt">'+esc(sv.no||"—")+(sv.tip?' <span style="font-weight:500;color:var(--muted);font-size:12px;">· '+esc(sv.tip)+'</span>':'')+'</div>'
    +'<div class="stx nowrap">'+esc([c.air?"Uçak kargo":"Konteyner",sv.urun,(sv.gelis?"geliş "+sv.gelis:"")].filter(Boolean).join(" · "))+'</div></div>'+durChip(sv,c)+'</div>';
   var chain='<div class="chain"><b>SENA zinciri</b>'+(c.senaNos.length
-    ?c.senaNos.slice(0,6).map(n=>'<span class="pillx">'+esc(n)+'</span>').join('')+(c.senaNos.length>6?'<span class="pillx" style="background:rgba(168,170,174,.16);color:#6f6b7d;">+'+(c.senaNos.length-6)+'</span>':'')
-    :(c.acik?'<span class="pillx" style="background:rgba(255,159,67,.18);color:#f18728;">beyanname bekleniyor</span>':'<span class="pillx" style="background:rgba(168,170,174,.16);color:#6f6b7d;">—</span>'))+'</div>';
+    ?c.senaNos.slice(0,6).map(n=>'<span class="pillx"'+(c.senaPayNos[n]?' style="background:rgba(40,199,111,.16);color:#1a9e55;"':'')+'>'+esc(n)+'</span>').join('')+(c.senaNos.length>6?'<span class="pillx" style="background:rgba(168,170,174,.16);color:#6f6b7d;">+'+(c.senaNos.length-6)+'</span>':'')
+    :(c.acik?'<span class="pillx" style="background:rgba(255,159,67,.18);color:#f18728;">beyanname bekleniyor</span>':'<span class="pillx" style="background:rgba(168,170,174,.16);color:#6f6b7d;">—</span>'))
+   +(c.senaArd>0?'<span class="pillx" style="background:rgba(40,199,111,.14);color:#1a9e55;">✓ SENA tarafından ödenen '+tl(c.senaArd)+'</span>':'')+'</div>';
   var stats='<div class="stats">'
    +'<div class="stat"><div class="l">Devir</div><div class="v">'+c.devir+'</div></div>'
    +'<div class="stat"><div class="l">Komisyon</div><div class="v mono" style="color:#e0303e;">'+(c.kom>0?tl(c.kom):"—")+'</div></div>'
@@ -344,7 +355,9 @@ function dashView(){
   const d=S.data||{};const sevs=(d.sevkiyatlar||[]);
   var list=sevs.map(sv=>({sv:sv,c:calc(sv)}));
   var T={dosya:list.length,hd:list.filter(x=>x.c.hd).length,kom:0,ode:0,mas:0,uyari:0,ard:0,ardB:0,odmN:0};
-  list.forEach(x=>{if(x.c.hd)return;T.kom+=x.c.kom;T.ode+=x.c.odeTop;T.mas+=x.c.masTop;T.uyari+=x.c.uyari.length;T.ard+=x.c.senaArd;T.ardB+=x.c.senaArdBek;T.odmN+=(x.sv.odemeler||[]).length;});
+  /* V22 (ERSA kararı): hesap dışı dosyanın (Heidelberg) SENA-onaylı kalemleri de havuzdan düşülür;
+     dosyanın diğer kalemleri/komisyonları hesap dışı kalmaya devam eder. */
+  list.forEach(x=>{if(x.c.hd){T.ard+=x.c.senaArd;T.ardB+=x.c.senaArdBek;return;}T.kom+=x.c.kom;T.ode+=x.c.odeTop;T.mas+=x.c.masTop;T.uyari+=x.c.uyari.length;T.ard+=x.c.senaArd;T.ardB+=x.c.senaArdBek;T.odmN+=(x.sv.odemeler||[]).length;});
   var f=S.filt;
   var fl=list.filter(x=>{
     if(f==="kont")return x.sv.tasima!=="Uçak Kargo";
@@ -359,23 +372,20 @@ function dashView(){
    +'<button class="nbtn" style="background:var(--red);box-shadow:0 3px 8px rgba(234,84,85,.45);" data-a="sevAc">'+ti("plus","font-size:14px")+'Yeni sevkiyat</button></div>';
   var kpis='<div class="kpis">'
    +'<div class="kpi"><div class="kico lbl-bad">'+ti("files")+'</div><div class="kv">'+T.dosya+'</div><div class="kl">Dosya · '+cnt.kont+' konteyner, '+cnt.air+' uçak</div></div>'
-   +'<div class="kpi klik'+(S.kpiPanel==="kom"?" on":"")+'" data-a="kpi" data-k="kom"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-warn">'+ti("cash")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl(T.kom)+'</div><div class="kl">Toplam komisyon</div></div>'
-   +'<div class="kpi klik'+(S.kpiPanel==="ode"?" on":"")+'" data-a="kpi" data-k="ode"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-info">'+ti("wallet")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl(T.ode)+(T.mas>0?' <span class="grn">%'+Math.min(Math.round(T.ode/T.mas*100),100)+'</span>':'')+'</div><div class="kl">SENA\'ya ödenen</div></div>'
+   +'<div class="kpi klik'+(S.kpiPanel==="kom"?" on":"")+'" data-a="kpi" data-k="kom"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-warn">'+ti("cash")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl(T.kom)+'</div><div class="kl">Toplam komisyon · ayrı hesap</div></div>'
+   +'<div class="kpi klik'+(S.kpiPanel==="ode"?" on":"")+'" data-a="kpi" data-k="ode"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-info">'+ti("wallet")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl((T.ode||0)-(T.ard||0))+'</div><div class="kl">SENA\'da kalan paran</div></div>'
    +'<div class="kpi"><div class="kico lbl-warn">'+ti("clock")+'</div><div class="kv" style="color:#f18728;">'+T.uyari+'</div><div class="kl">Bekleyen işlem</div></div></div>';
   var kp='';
   /* V15: kom/ode panelleri artık HER ZAMAN üretilir — hem KPI tıklamasında (kp) hem Komisyonlar/Ödemeler sekmelerinde kullanılır */
   var komP='', odeP='', ka=[], oa=[];
   {
-    list.forEach(function(x){if(x.c.hd)return;(x.sv.masraflar||[]).forEach(function(m){if(isKom(m))ka.push({no:x.sv.no,id:x.sv.id,m:m});});});
+    /* V18: komisyon listesi = daha önce yazılan kayıtlar (panel + seed) — SENA'nın onaya
+       gönderdikleri (SM) burada değil: onaylananlar "SENA tarafından ödenen"de, bekleyenler Onaydakiler'de */
+    list.forEach(function(x){if(x.c.hd)return;(x.sv.masraflar||[]).forEach(function(m){if(!snKay(m)&&isKom(m))ka.push({no:x.sv.no,id:x.sv.id,m:m});});});
     ka.sort(function(a,b){return String(b.m.tarih).localeCompare(String(a.m.tarih));});
-    /* V16: SENA'nın gönderip ERSA'nın ONAYLADIĞI kalemler YEŞİL görünür + başlıkta onaylı sayacı */
-    var kaOnayli=ka.filter(function(r){return r.m.kaynak!=="panel" && r.m.onay==="Onaylandı";}).length;
     var krows=ka.map(function(r){
-      var onayli=(r.m.kaynak!=="panel" && r.m.onay==="Onaylandı");
-      var seritStil=onayli?'border-left:3px solid #28c76f;background:linear-gradient(90deg,rgba(40,199,111,.07),transparent);':'border-left:3px solid #ea5455;background:linear-gradient(90deg,rgba(234,84,85,.05),transparent);';
-      var onayPil=onayli?'<span class="pill p-g" style="flex:0 0 auto;">✓ Onaylı</span>':(r.m.kaynak!=="panel"?(r.m.onay==="Reddedildi"?'<span class="pill p-r" style="flex:0 0 auto;">Reddedildi</span>':r.m.onay==="Düzeltme Bekleniyor"?'<span class="pill p-o" style="flex:0 0 auto;">Düzeltmede</span>':'<span class="pill p-o" style="flex:0 0 auto;">Bekliyor</span>'):'');
-      return '<div class="row" data-a="open" data-id="'+esc(r.id)+'" style="cursor:pointer;align-items:center;'+seritStil+'"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(r.m.kalem)+(r.m.senaNo?' <span class="pillx" style="font-size:10px;">'+esc(r.m.senaNo)+'</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(r.m.tarih||"")+' · '+esc(r.no)+(r.m.aciklama?' · '+esc(r.m.aciklama):'')+'</div></div>'+onayPil+'<div class="mono" style="font-weight:700;color:'+(onayli?'#1a9e55':'#e0303e')+';flex:0 0 auto;">'+tl(r.m.tl)+'</div>'+ti("chevron-right","font-size:14px;color:#a5a3ae")+'</div>';}).join('')||'<div class="empty">Komisyon kaydı yok.</div>';
-    komP='<div class="box kpanel"><div class="kph">'+ti("cash","font-size:16px;color:#e0303e")+'Komisyon kayıtları · '+ka.length+' kalem'+(kaOnayli?'<span style="margin-left:8px;background:rgba(40,199,111,.14);color:#1a9e55;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:800;">✓ '+kaOnayli+' onayladığın</span>':'')+'<span class="x" data-a="kpi" data-k="kom">'+ti("x")+'</span></div>'+krows
+      return '<div class="row" data-a="open" data-id="'+esc(r.id)+'" style="cursor:pointer;align-items:center;border-left:3px solid #ea5455;background:linear-gradient(90deg,rgba(234,84,85,.05),transparent);"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(r.m.kalem)+(r.m.senaNo?' <span class="pillx" style="font-size:10px;">'+esc(r.m.senaNo)+'</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(r.m.tarih||"")+' · '+esc(r.no)+(r.m.aciklama?' · '+esc(r.m.aciklama):'')+'</div></div><div class="mono" style="font-weight:700;color:#e0303e;flex:0 0 auto;">'+tl(r.m.tl)+'</div>'+ti("chevron-right","font-size:14px;color:#a5a3ae")+'</div>';}).join('')||'<div class="empty">Komisyon kaydı yok.</div>';
+    komP='<div class="box kpanel"><div class="kph">'+ti("cash","font-size:16px;color:#e0303e")+'Komisyon kayıtları · '+ka.length+' kalem<span style="margin-left:8px;font-size:11px;font-weight:600;color:var(--muted);">SENA\'nın onaya gönderdikleri burada değil</span><span class="x" data-a="kpi" data-k="kom">'+ti("x")+'</span></div>'+krows
      +'<div class="row" style="background:var(--card2);"><div class="grow" style="font-size:11.5px;font-weight:700;color:var(--muted);">TOPLAM KOMİSYON</div><div class="mono" style="font-weight:800;font-size:16px;color:#e0303e;">'+tl(T.kom)+'</div></div></div>';
   }
   {
@@ -396,7 +406,7 @@ function dashView(){
   /* V14 · PANELDEN DÖNEN KALEMLER — reddedilen ve düzeltme istenen masraflar sebep/notuyla, tek tıkla düzeltilip yeniden onaya gönderilir */
   var donen=[];
   ((S.data&&S.data.sevkiyatlar)||[]).forEach(function(sv){ (sv.masraflar||[]).forEach(function(m){
-    if(m.onay==="Reddedildi"||m.onay==="Düzeltme Bekleniyor") donen.push({m:m,no:sv.no||""}); }); });
+    if(snKay(m)&&(m.onay==="Reddedildi"||m.onay==="Düzeltme Bekleniyor")) donen.push({m:m,no:sv.no||""}); }); });
   var donenBox='';
   if(donen.length){
     donenBox='<div class="sec">'+ti("alert-triangle","font-size:17px;color:#E07B00")+'Panelden dönen kalemler <span style="margin-left:6px;background:rgba(255,159,67,.16);color:#E07B00;font-size:11px;font-weight:800;border-radius:20px;padding:2px 9px;">'+donen.length+'</span></div>'
@@ -411,7 +421,7 @@ function dashView(){
   }
   /* V15 · 6 ALT SEKME — tüm içerik AYNEN korunur (cardHTML/filtreler/paneller), sadece sekmelere bölünür; seçim sn_tab'da hatırlanır */
   var st=S.senaTab; if(!st){ try{st=localStorage.getItem("sn_tab")||"ozet";}catch(e){st="ozet";} S.senaTab=st; }
-  var onL=[]; list.forEach(function(x){ (x.sv.masraflar||[]).forEach(function(m){ if(m.kaynak==="panel")return; onL.push({no:x.sv.no||"",id:x.sv.id,m:m}); }); });
+  var onL=[]; list.forEach(function(x){ (x.sv.masraflar||[]).forEach(function(m){ if(!snKay(m))return; onL.push({no:x.sv.no||"",id:x.sv.id,m:m}); }); });
   var bekN=onL.filter(function(x){return (x.m.onay||"Onay Bekliyor")==="Onay Bekliyor";}).length;
   var _tb=function(id,lbl,bdg){ var on=st===id; return '<button data-a="snTab" data-t="'+id+'" style="border:none;cursor:pointer;font-family:inherit;border-radius:20px;padding:10px 15px;font-size:12.5px;font-weight:800;display:inline-flex;align-items:center;gap:6px;'+(on?'background:#ea5455;color:#fff;box-shadow:0 4px 10px rgba(234,84,85,.35);':'background:var(--card);color:var(--head);border:1px solid var(--line);')+'">'+lbl+(bdg?'<span style="background:'+(on?'#fff':'rgba(241,135,40,.16)')+';color:'+(on?'#e0303e':'#c76b00')+';border-radius:9px;padding:1px 7px;font-size:10px;">'+bdg+'</span>':'')+'</button>'; };
   var tabbar='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 16px;">'
@@ -425,16 +435,21 @@ function dashView(){
   if(st==="dosya") return tabbar+filters+secs;
   if(st==="kom") return tabbar+komP;
   if(st==="ode"){
-    var spRows='', spTop=0;
-    list.forEach(function(x){ if(x.c.hd)return; (x.sv.masraflar||[]).forEach(function(m){
-      var a2=String(m.aciklama||"").toLocaleLowerCase("tr"),k2=String(m.kalem||"").toLocaleLowerCase("tr");
-      var sp=(a2.indexOf("sena")>=0&&(a2.indexOf("öde")>=0||a2.indexOf("yatır")>=0||a2.indexOf("yatir")>=0))||k2.indexOf("ardiye")>=0||k2.indexOf("antrepo")>=0;
-      if(!sp||m.onay!=="Onaylandı"||!String(m.belge||"").trim())return;
+    /* V18: yapısal kural — SENA'nın onaya gönderdiği (SM id) + ERSA'nın onayladığı kalemler.
+       Panel/seed'den yazılmış eski komisyon/masraflar buraya GİRMEZ. Bekleyenler bilgi satırında. */
+    var spRows='', spTop=0, spBek=0;
+    /* V22: hesap dışı dosya da dahil — hero T.ard ile birebir aynı kapsam */
+    list.forEach(function(x){ (x.sv.masraflar||[]).forEach(function(m){
+      if(!snKay(m))return;
+      var st3=m.onay||"Onay Bekliyor";
+      if(st3==="Onay Bekliyor"){spBek++;return;}
+      if(st3!=="Onaylandı")return;
       spTop+=(m.tl||0);
-      spRows+='<div class="row"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(m.kalem)+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(m.tarih||"")+' · '+esc(x.sv.no||"")+'</div></div><div class="mono" style="font-weight:700;">'+tl(m.tl)+'</div><span class="pill p-g">Onaylı · dekontlu</span></div>';
+      spRows+='<div class="row" style="border-left:3px solid #28c76f;background:linear-gradient(90deg,rgba(40,199,111,.07),transparent);"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(m.kalem)+(m.senaNo?' <span class="pillx" style="font-size:10px;background:rgba(40,199,111,.16);color:#1a9e55;">'+esc(m.senaNo)+'</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(m.tarih||"")+' · '+esc(x.sv.no||"")+'</div></div><div class="mono" style="font-weight:700;color:#1a9e55;">'+tl(m.tl)+'</div><span class="pill p-g">✓ Onaylı'+(String(m.belge||"").trim()?' · dekontlu':'')+'</span></div>';
     });});
-    var spBox2='<div class="box"><div class="kph">'+ti("receipt","font-size:16px;color:#f18728")+'SENA\'nın ödediği masraflar · borca eklenir</div>'+(spRows||'<div class="empty">Onaylı + dekontlu SENA ödemesi yok.</div>')
-     +'<div class="row" style="background:var(--card2);"><div class="grow" style="font-size:11.5px;font-weight:700;color:var(--muted);">TOPLAM</div><div class="mono" style="font-weight:800;font-size:16px;color:#f18728;">'+tl(spTop)+'</div></div></div>';
+    var spBox2='<div class="box"><div class="kph">'+ti("receipt","font-size:16px;color:#1a9e55")+'SENA tarafından ödenen masraflar'+(spRows?' · gönderdiğin paradan düşülür':'')+'<span style="margin-left:8px;font-size:11px;font-weight:600;color:var(--muted);">yalnız onaya gönderip onaylananlar</span></div>'+(spRows||'<div class="empty">Onaya gönderilip onaylanan SENA ödemesi yok.</div>')
+     +(spBek?'<div class="row" style="background:rgba(255,159,67,.08);"><div class="grow" style="font-size:12px;font-weight:700;color:#E07B00;">'+ti("clock","font-size:13px")+' '+spBek+' kalem ERSA onayında bekliyor — onaylanınca paradan düşülür</div></div>':'')
+     +'<div class="row" style="background:var(--card2);"><div class="grow" style="font-size:11.5px;font-weight:700;color:var(--muted);">TOPLAM</div><div class="mono" style="font-weight:800;font-size:16px;color:#1a9e55;">'+tl(spTop)+'</div></div></div>';
     return tabbar+'<div style="display:flex;justify-content:flex-end;margin-bottom:10px;"><button class="nbtn" data-a="odeAc">'+ti("upload","font-size:14px")+'Ödeme dekontu yükle</button></div>'+spBox2+'<div style="height:14px;"></div>'+odeP;
   }
   if(st==="onay"){
@@ -470,25 +485,31 @@ function detailView(){
    +f(air?"Uçuş / sefer":"Tip / ebat",k.tip)+f("Ürün / içerik",k.urun)+f("Tedarikçi",k.tedarikci)
    +f(air?"AWB no":"BL / konşimento",k.bl)+f("Beyanname no",k.beyanname)+f(air?"Varış havalimanı":"Varış limanı",k.liman)
    +f("Geliş tarihi",k.gelis)
-   +'<div style="grid-column:1 / -1;"><div style="font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:5px;">SENA zinciri</div><div class="chain">'+(c.senaNos.length?c.senaNos.map(n=>'<span class="pillx">'+esc(n)+'</span>').join(''):'<span style="font-size:13px;color:var(--muted);">—</span>')+'</div></div>'
+   +'<div style="grid-column:1 / -1;"><div style="font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:5px;">SENA zinciri</div><div class="chain">'+(c.senaNos.length?c.senaNos.map(n=>'<span class="pillx"'+(c.senaPayNos[n]?' style="background:rgba(40,199,111,.16);color:#1a9e55;"':'')+'>'+esc(n)+'</span>').join(''):'<span style="font-size:13px;color:var(--muted);">—</span>')+(c.senaArd>0?'<span class="pillx" style="background:rgba(40,199,111,.14);color:#1a9e55;">✓ SENA tarafından ödenen '+tl(c.senaArd)+'</span>':'')+'</div></div>'
    +(k.not?'<div style="grid-column:1 / -1;">'+f("Not",k.not)+'</div>':'')+'</div>';
   var uyari=c.uyari.length?'<div class="warns" style="margin:12px 0 0;">'+c.uyari.map(u=>'<span class="chip '+(u.w==="bad"?"lbl-bad":"lbl-warn")+'">'+ti(u.ic,"font-size:13px")+esc(u.t)+'</span>').join('')+'</div>':'';
   var mas=(k.masraflar||[]);
-  var senaT=0,vergiT=0,senaN=0;
-  mas.forEach(function(m){var g=grpOf(m);if(g==="sena"){senaT+=(m.tl||0);senaN++;}else if(g==="vergi")vergiT+=(m.tl||0);});
-  var lojT=Math.max(c.masTop-senaT-vergiT,0);
+  /* V18: SENA'nın onaya gönderdiği (SM) kalemler komisyon/vergi/lojistik kutularına KARIŞMAZ — kendi yeşil kutusunda */
+  var senaT=0,vergiT=0,senaN=0,senaKayT=0,senaOdeT=0,senaOdeN=0,senaBekN=0;
+  mas.forEach(function(m){
+    if(snKay(m)){senaKayT+=(m.tl||0);var s4=m.onay||"Onay Bekliyor";if(s4==="Onaylandı"){senaOdeT+=(m.tl||0);senaOdeN++;}else if(s4==="Onay Bekliyor")senaBekN++;return;}
+    var g=grpOf(m);if(g==="sena"){senaT+=(m.tl||0);senaN++;}else if(g==="vergi")vergiT+=(m.tl||0);});
+  var lojT=Math.max(c.masTop-senaT-vergiT-senaKayT,0);
   var payS=c.masTop>0?Math.round(senaT/c.masTop*100):0;
   var band=mas.length?('<div class="msums">'
    +'<div class="msum" style="background:rgba(234,84,85,.12);"><div class="l" style="color:#e0303e;">SENA KOMİSYONLARI</div><div class="v mono" style="color:#e0303e;">'+tl(senaT)+'</div><div class="s" style="color:#e0303e;">'+senaN+' kalem · dosya payı %'+payS+'</div></div>'
+   +(senaKayT>0?'<div class="msum" style="background:rgba(40,199,111,.12);"><div class="l" style="color:#1a9e55;">SENA TARAFINDAN ÖDENEN</div><div class="v mono" style="color:#1a9e55;">'+tl(senaOdeT)+'</div><div class="s" style="color:#1a9e55;">'+senaOdeN+' onaylı kalem'+(senaBekN?' · '+senaBekN+' onayda':'')+'</div></div>':'')
    +'<div class="msum" style="background:rgba(0,207,232,.12);"><div class="l" style="color:#00a9c0;">VERGİ / RESMÎ</div><div class="v mono" style="color:#00a9c0;">'+tl(vergiT)+'</div><div class="s" style="color:#00a9c0;">KDV, damga, yolluk, TSE</div></div>'
    +'<div class="msum" style="background:rgba(168,170,174,.14);"><div class="l" style="color:#6f6b7d;">LİMAN / LOJİSTİK</div><div class="v mono" style="color:#6f6b7d;">'+tl(lojT)+'</div><div class="s" style="color:#6f6b7d;">ardiye, nakliye, kurye, sigorta</div></div>'
-   +'</div><div class="legrow"><span><i style="background:#ea5455;"></i>SENA hizmet bedeli</span><span><i style="background:#dfe0e4;"></i>Diğer masraflar</span></div>'):'';
+   +'</div><div class="legrow"><span><i style="background:#ea5455;"></i>SENA hizmet bedeli</span>'+(senaKayT>0?'<span><i style="background:#28c76f;"></i>SENA tarafından ödenen</span>':'')+'<span><i style="background:#dfe0e4;"></i>Diğer masraflar</span></div>'):'';
   var mrows=mas.map(function(m){
     var fp2=fotoParse(m.belge||"");
-    var sena=(grpOf(m)==="sena");
+    var sena=(!snKay(m)&&grpOf(m)==="sena");
+    var sOdeOn=(snKay(m)&&m.onay==="Onaylandı");
+    var srt=sena?'border-left:3px solid #ea5455;background:linear-gradient(90deg,rgba(234,84,85,.07),rgba(234,84,85,.02));':(sOdeOn?'border-left:3px solid #28c76f;background:linear-gradient(90deg,rgba(40,199,111,.07),transparent);':'border-left:3px solid transparent;');
     var onay=(m.onay==="Reddedildi")?'<span class="pill p-r">Reddedildi</span>':(m.onay==="Onaylandı"?(m.odeme==="Ödendi"?'<span class="pill p-g">Ödendi ✓</span>':'<span class="pill p-b">Onaylandı</span>'):'<span class="pill p-o">Onay Bekliyor</span>');
-    return '<div class="row" style="align-items:center;border-left:3px solid '+(sena?'#ea5455':'transparent')+';'+(sena?'background:linear-gradient(90deg,rgba(234,84,85,.07),rgba(234,84,85,.02));':'')+'"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(m.kalem)+(m.senaNo?' <span class="pillx" style="font-size:10px;">'+esc(m.senaNo)+'</span>':'')+(sena?'<span class="tagS">SENA</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(m.tarih||"")+(m.aciklama?" · "+esc(m.aciklama):"")+'</div></div>'
-     +'<div style="text-align:right;width:120px;flex:0 0 auto;"><div class="mono" style="font-weight:700;'+(sena?'color:#e0303e;':'')+'">'+money(m.tutar,m.pb)+'</div>'+(m.pb!=="₺"?'<div style="font-size:10px;color:var(--muted);">≈ '+tl(m.tl)+(m.kur?' @'+m.kur:'')+'</div>':'')+'</div>'
+    return '<div class="row" style="align-items:center;'+srt+'"><div class="grow" style="min-width:0;"><div style="font-weight:700;" class="nowrap">'+esc(m.kalem)+(m.senaNo?' <span class="pillx" style="font-size:10px;'+(sOdeOn?'background:rgba(40,199,111,.16);color:#1a9e55;':'')+'">'+esc(m.senaNo)+'</span>':'')+(sena?'<span class="tagS">SENA</span>':'')+(sOdeOn?'<span class="tagS" style="background:#28c76f;">SENA ÖDEDİ</span>':'')+'</div><div style="font-size:11px;color:var(--muted);" class="nowrap">'+esc(m.tarih||"")+(m.aciklama?" · "+esc(m.aciklama):"")+'</div></div>'
+     +'<div style="text-align:right;width:120px;flex:0 0 auto;"><div class="mono" style="font-weight:700;'+(sena?'color:#e0303e;':(sOdeOn?'color:#1a9e55;':''))+'">'+money(m.tutar,m.pb)+'</div>'+(m.pb!=="₺"?'<div style="font-size:10px;color:var(--muted);">≈ '+tl(m.tl)+(m.kur?' @'+m.kur:'')+'</div>':'')+'</div>'
      +'<div style="width:100px;text-align:center;flex:0 0 auto;">'+onay+'</div>'
      +'<div style="width:30px;display:flex;justify-content:flex-end;flex:0 0 auto;">'+(fp2.urls.length?'<span style="cursor:pointer;padding:5px;color:#3b82f6;font-size:15px;" data-a="foto" data-url="'+esc(fp2.urls[0])+'" title="Belgeyi gör">'+ti("eye")+'</span>':'')+'</div></div>';
   }).join('')||'<div class="empty">Bu sevkiyata henüz masraf eklenmedi.</div>';
