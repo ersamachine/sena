@@ -41,18 +41,18 @@ i.ti{line-height:1;}
 .ci{width:36px;height:36px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;}
 .lockchip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:50rem;background:rgba(168,170,174,.16);color:var(--txt);white-space:nowrap;}
 /* hero */
-.hero{background:var(--hero);border-radius:10px;box-shadow:0 6px 20px rgba(203,32,48,.35);padding:22px 24px;margin:18px 0 16px;color:#fff;}
+.hero{background:var(--hero);border-radius:10px;box-shadow:0 6px 20px rgba(203,32,48,.35);padding:14px 16px 12px;margin:14px 0 14px;color:#fff;}
 .hero h2{font-size:19px;font-weight:700;}
 .hero .sub{font-size:12.5px;color:rgba(255,255,255,.8);margin-top:3px;}
 .hwrap{display:flex;gap:20px;align-items:center;flex-wrap:wrap;}
 .hstrip{display:flex;gap:0;margin-top:18px;align-items:stretch;flex-wrap:wrap;}
 /* V23 · hero kart tasarımı (onaylı mokap: MOKAP-HERO) — kartlar grid'de, asla üst üste binmez */
 .htop{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;}
-.hcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:12px;margin-top:16px;}
-.hgc{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:14px;padding:14px 16px;min-width:0;}
+.hcards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:10px;}
+.hgc{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:14px;padding:11px 14px;min-width:0;}
 .hgc .l{font-size:11px;letter-spacing:.5px;font-weight:800;color:rgba(255,255,255,.9);display:flex;align-items:center;gap:7px;text-transform:uppercase;}
 .hgc .ic{width:26px;height:26px;border-radius:8px;background:rgba(255,255,255,.22);display:inline-flex;align-items:center;justify-content:center;font-size:14px;flex:0 0 auto;}
-.hgc .v{font-size:clamp(19px,1.9vw,26px);font-weight:800;margin-top:8px;font-variant-numeric:tabular-nums;letter-spacing:.2px;}
+.hgc .v{font-size:clamp(17px,1.5vw,23px);font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:.2px;}
 .hgc .s{font-size:11.5px;color:rgba(255,255,255,.82);margin-top:5px;font-weight:600;line-height:1.45;}
 .hgc.kalan{background:rgba(30,150,90,.34);border-color:rgba(142,255,192,.55);}
 .hgc.kalan .v{color:#a8ffce;}
@@ -60,9 +60,13 @@ i.ti{line-height:1;}
 .hgc.eksi{background:rgba(120,20,20,.4);border-color:rgba(255,170,170,.6);}
 .hgc.eksi .v{color:#ffd6d6;}
 .hgc.kom{border:1.5px dashed rgba(255,255,255,.55);background:rgba(255,255,255,.06);}
+.hgc.klik{cursor:pointer;transition:background .15s,transform .15s;}
+.hgc.klik:hover{background:rgba(255,255,255,.24);transform:translateY(-2px);}
+.hgc.kom.klik:hover{background:rgba(255,255,255,.15);}
+.hgc.grafik{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:8px 10px;}
 .hbadge{display:inline-flex;align-items:center;gap:5px;background:#ffe4b5;color:#8a5300;font-size:10.5px;font-weight:800;border-radius:16px;padding:3px 9px;margin-top:7px;}
 .hbadge.gri{background:rgba(255,255,255,.25);color:#fff;}
-.heq{margin-top:14px;background:rgba(0,0,0,.16);border-radius:12px;padding:10px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:700;}
+.heq{margin-top:10px;background:rgba(0,0,0,.16);border-radius:12px;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:700;}
 .heq .chip{background:rgba(255,255,255,.18);border-radius:8px;padding:4px 10px;font-variant-numeric:tabular-nums;white-space:nowrap;}
 .heq .chip.g{background:rgba(40,199,111,.4);color:#c9ffdf;}
 .heq .chip.r{background:rgba(255,120,120,.35);color:#ffe0e0;}
@@ -322,18 +326,20 @@ function heroHTML(T){
    ? '<div class="hgc eksi"><div class="l"><span class="ic">⚠️</span>SENA\'nın alacağı</div><div class="v mono">− '+tl(Math.abs(kalan))+'</div><div class="s">masraflar gönderdiğin parayı aştı</div></div>'
    : '<div class="hgc kalan"><div class="l"><span class="ic">👛</span>SENA\'da kalan paran</div><div class="v mono">'+tl(kalan)+'</div><div class="s">gönderdiklerinden harcanmayan</div></div>';
   var bekBadge=((T.ardB||0)>0)?'<div class="hbadge">⏳ '+T.ardB+' kalem onayda'+((T.ardBTL||0)>0?' · '+tl(T.ardBTL):'')+' — onaylayınca düşülür</div>':'';
+  var ok='<span style="margin-left:auto;font-weight:900;opacity:.85;">›</span>';
   return '<div class="hero"><div class="htop"><div>'
-   +'<h2>Masraf hesabı</h2><div class="sub">'+T.dosya+' dosya · '+(T.hd?T.hd+' hesap dışı · ':'')+'canlı veriler</div></div>'
-   +'<div style="margin-left:auto;text-align:center;flex:0 0 auto;"><svg width="96" height="96" viewBox="0 0 128 128" role="img" aria-label="Para kullanımı">'
+   +'<h2>Masraf hesabı</h2><div class="sub">'+T.dosya+' dosya · '+(T.hd?T.hd+' hesap dışı · ':'')+'canlı veriler</div></div></div>'
+   +'<div class="hcards">'
+   +'<div class="hgc klik" data-a="snTab" data-t="ode" title="Ödeme kayıtlarını aç"><div class="l"><span class="ic">💰</span>Gönderdiğin paralar'+ok+'</div><div class="v mono">'+tl(havuz)+'</div><div class="s">'+(T.odmN||0)+' dekont · banka kayıtlı</div></div>'
+   +'<div class="hgc klik" data-a="snTab" data-t="ode" title="SENA\'nın ödediği masrafları aç"><div class="l"><span class="ic">🧾</span>SENA\'nın ödediği masraflar'+ok+'</div><div class="v mono">'+(ard>0?('− '+tl(ard)):'—')+'</div><div class="s">'+(T.ardN||0)+' onaylı kalem · paradan düşüldü</div>'+bekBadge+'</div>'
+   +kalanKart
+   +'<div class="hgc kom klik" data-a="snTab" data-t="kom" title="Komisyon kayıtlarını aç"><div class="l"><span class="ic">📋</span>SENA komisyonları'+ok+'</div><div class="v mono">'+tl(T.kom)+'</div><div class="s">bu hesaba dahil değil · ayrıca incelenecek</div><div class="hbadge gri">AYRI HESAP</div></div>'
+   +'<div class="hgc grafik"><div class="l"><span class="ic">📈</span>Para kullanımı</div>'
+   +'<svg width="86" height="86" viewBox="0 0 128 128" role="img" aria-label="Para kullanımı">'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="9" stroke-dasharray="4 8"/>'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="'+(neg?'#ffd6d6':'#fff')+'" stroke-width="9" transform="rotate(-90 64 64)" stroke-linecap="round" opacity=".95" style="stroke-dasharray:1.8 2.2;stroke-dashoffset:27"/>'
-   +'<text x="64" y="60" text-anchor="middle" fill="#fff" font-size="24" font-weight="800" font-family="Public Sans,sans-serif">%'+pct+'</text>'
-   +'<text x="64" y="80" text-anchor="middle" fill="rgba(255,255,255,.85)" font-size="12" font-family="Public Sans,sans-serif">para kullanımı</text></svg></div></div>'
-   +'<div class="hcards">'
-   +'<div class="hgc"><div class="l"><span class="ic">💰</span>Gönderdiğin paralar</div><div class="v mono">'+tl(havuz)+'</div><div class="s">'+(T.odmN||0)+' dekont · banka kayıtlı</div></div>'
-   +'<div class="hgc"><div class="l"><span class="ic">🧾</span>SENA\'nın ödediği masraflar</div><div class="v mono">'+(ard>0?('− '+tl(ard)):'—')+'</div><div class="s">'+(T.ardN||0)+' onaylı kalem · paradan düşüldü</div>'+bekBadge+'</div>'
-   +kalanKart
-   +'<div class="hgc kom"><div class="l"><span class="ic">📋</span>SENA komisyonları</div><div class="v mono">'+tl(T.kom)+'</div><div class="s">bu hesaba dahil değil · ayrıca incelenecek</div><div class="hbadge gri">AYRI HESAP</div></div>'
+   +'<text x="64" y="60" text-anchor="middle" fill="#fff" font-size="28" font-weight="800" font-family="Public Sans,sans-serif">%'+pct+'</text>'
+   +'<text x="64" y="80" text-anchor="middle" fill="rgba(255,255,255,.85)" font-size="12" font-family="Public Sans,sans-serif">harcanan</text></svg></div>'
    +'</div>'
    +'<div class="heq"><span>Hesap:</span><span class="chip">'+tl(havuz)+'</span><span class="op">−</span><span class="chip">'+tl(ard)+'</span><span class="op">=</span><span class="chip '+(neg?'r':'g')+'">'+(neg?('− '+tl(Math.abs(kalan))):tl(kalan))+'</span>'
    +((T.ardB||0)>0?'<span style="font-size:12px;color:rgba(255,255,255,.85);">· '+T.ardB+' kalem onay bekliyor</span>':'')
