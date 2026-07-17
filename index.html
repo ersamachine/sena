@@ -274,12 +274,18 @@ function fixData(res){
     var list=res.sevkiyatlar||[];
     var key=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
     var own={};list.forEach(sv=>{if(sv.kaynak!=="panel"&&sv.no)own[key(sv.no)]=sv;});
-    /* V25: panel kopyası gizlenirken masraf ve ödemeleri aynı no'lu SENA dosyasına TAŞINIR —
-       panelden girilen masraflar artık kaybolmaz (eskiden kopya dosyayla birlikte yutulyordu). */
+    /* V26: panel kopyası gizlenirken YALNIZ YENİ panel masrafları SENA dosyasına taşınır.
+       Temiz içerik (seed) 02-03.07.2026'da yüklendi; öncesindeki panel kayıtları seed'in kaynağı
+       olduğundan MÜKERRERDİR ve taşınmaz (V25 hepsini taşıyınca komisyon 494.700→1.056.700 şişmişti).
+       zaman alanı backend V26 ile gelir; zaman yoksa (eski backend) hiçbir panel kalemi taşınmaz. */
+    var KESIM="2026-07-04";
     res.sevkiyatlar=list.filter(function(sv){
       if(sv.kaynak!=="panel"||!own[key(sv.no)])return true;
       var hedef=own[key(sv.no)];
-      if((sv.masraflar||[]).length)hedef.masraflar=(hedef.masraflar||[]).concat(sv.masraflar);
+      (sv.masraflar||[]).forEach(function(m){
+        if(m.kaynak==="panel" && !(m.zaman && String(m.zaman).slice(0,10)>=KESIM)) return;
+        hedef.masraflar=(hedef.masraflar||[]).concat([m]);
+      });
       if((sv.odemeler||[]).length)hedef.odemeler=(hedef.odemeler||[]).concat(sv.odemeler);
       return false;
     });
