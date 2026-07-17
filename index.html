@@ -273,8 +273,16 @@ function fixData(res){
   try{
     var list=res.sevkiyatlar||[];
     var key=s=>String(s||"").replace(/\s+/g,"").toUpperCase();
-    var own={};list.forEach(sv=>{if(sv.kaynak!=="panel"&&sv.no)own[key(sv.no)]=1;});
-    res.sevkiyatlar=list.filter(sv=>!(sv.kaynak==="panel"&&own[key(sv.no)]));
+    var own={};list.forEach(sv=>{if(sv.kaynak!=="panel"&&sv.no)own[key(sv.no)]=sv;});
+    /* V25: panel kopyası gizlenirken masraf ve ödemeleri aynı no'lu SENA dosyasına TAŞINIR —
+       panelden girilen masraflar artık kaybolmaz (eskiden kopya dosyayla birlikte yutulyordu). */
+    res.sevkiyatlar=list.filter(function(sv){
+      if(sv.kaynak!=="panel"||!own[key(sv.no)])return true;
+      var hedef=own[key(sv.no)];
+      if((sv.masraflar||[]).length)hedef.masraflar=(hedef.masraflar||[]).concat(sv.masraflar);
+      if((sv.odemeler||[]).length)hedef.odemeler=(hedef.odemeler||[]).concat(sv.odemeler);
+      return false;
+    });
   }catch(e){}
   return res;
 }
