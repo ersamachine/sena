@@ -329,15 +329,16 @@ function renderMain(){
   else{body=S.sel?detailView():dashView();}
   $("root").innerHTML=topbar()+'<div class="wrap">'+body+'</div>'+(S.sheet?modalHTML():"");
 }
-/* V23 · HAVUZ MODELİ + ONAYLI KART TASARIMI (MOKAP-HERO): Gönderdiğin paralar − SENA'nın
-   ödediği ONAYLI masraflar = SENA'da kalan para (eksiyse SENA'nın alacağı, kırmızı kart).
-   KOMİSYONLAR karışmaz — kesikli çerçeveli AYRI HESAP kartı. Kartlar grid'de, üst üste binmez. */
+/* V27 · KOMİSYON HESABA DAHİL (ERSA kararı 17.07.2026 — V21'den beri süren "ayrı hesap" kuralı KALKTI):
+   Gönderdiğin paralar − SENA'nın ödediği ONAYLI masraflar − SENA komisyonları = SENA'da kalan para
+   (eksiyse SENA'nın alacağı, kırmızı kart). Komisyon kartı artık kesikli/AYRI HESAP değil, düşülen kalem.
+   Halka = (masraf + komisyon) / gönderilen — %100'ü aşabilir (aşarsa kırmızı). */
 function heroHTML(T){
-  var ard=(T.ard||0), havuz=(T.ode||0), kalan=havuz-ard;
-  var pct=havuz>0?Math.min(Math.round(ard/havuz*100),100):(ard>0?100:0);
+  var ard=(T.ard||0), kom=(T.kom||0), havuz=(T.ode||0), kalan=havuz-ard-kom;
+  var pct=havuz>0?Math.round((ard+kom)/havuz*100):((ard+kom)>0?100:0);
   var neg=(kalan<0);
   var kalanKart=neg
-   ? '<div class="hgc eksi"><div class="l"><span class="ic">⚠️</span>SENA\'nın alacağı</div><div class="v mono">− '+tl(Math.abs(kalan))+'</div><div class="s">masraflar gönderdiğin parayı aştı</div></div>'
+   ? '<div class="hgc eksi"><div class="l"><span class="ic">⚠️</span>SENA\'nın alacağı</div><div class="v mono">− '+tl(Math.abs(kalan))+'</div><div class="s">masraf + komisyon gönderdiğini aştı</div></div>'
    : '<div class="hgc kalan"><div class="l"><span class="ic">👛</span>SENA\'da kalan paran</div><div class="v mono">'+tl(kalan)+'</div><div class="s">gönderdiklerinden harcanmayan</div></div>';
   var bekBadge=((T.ardB||0)>0)?'<div class="hbadge">⏳ '+T.ardB+' kalem onayda'+((T.ardBTL||0)>0?' · '+tl(T.ardBTL):'')+' — onaylayınca düşülür</div>':'';
   var ok='<span style="margin-left:auto;font-weight:900;opacity:.85;">›</span>';
@@ -346,8 +347,8 @@ function heroHTML(T){
    +'<div class="hcards">'
    +'<div class="hgc klik" data-a="snTab" data-t="ode" title="Ödeme kayıtlarını aç"><div class="l"><span class="ic">💰</span>Gönderdiğin paralar'+ok+'</div><div class="v mono">'+tl(havuz)+'</div><div class="s">'+(T.odmN||0)+' dekont · banka kayıtlı</div></div>'
    +'<div class="hgc klik" data-a="snTab" data-t="ode" title="SENA\'nın ödediği masrafları aç"><div class="l"><span class="ic">🧾</span>SENA\'nın ödediği masraflar'+ok+'</div><div class="v mono">'+(ard>0?('− '+tl(ard)):'—')+'</div><div class="s">'+(T.ardN||0)+' onaylı kalem · paradan düşüldü</div>'+bekBadge+'</div>'
+   +'<div class="hgc klik" data-a="snTab" data-t="kom" title="Komisyon kayıtlarını aç"><div class="l"><span class="ic">📋</span>SENA komisyonları'+ok+'</div><div class="v mono">'+(kom>0?('− '+tl(kom)):'—')+'</div><div class="s">e-faturalı hizmet bedelleri · paradan düşüldü</div></div>'
    +kalanKart
-   +'<div class="hgc kom klik" data-a="snTab" data-t="kom" title="Komisyon kayıtlarını aç"><div class="l"><span class="ic">📋</span>SENA komisyonları'+ok+'</div><div class="v mono">'+tl(T.kom)+'</div><div class="s">bu hesaba dahil değil · ayrıca incelenecek</div><div class="hbadge gri">AYRI HESAP</div></div>'
    +'<div class="hgc grafik"><div class="l"><span class="ic">📈</span>Para kullanımı</div>'
    +'<svg width="86" height="86" viewBox="0 0 128 128" role="img" aria-label="Para kullanımı">'
    +'<circle cx="64" cy="64" r="52" fill="none" stroke="rgba(255,255,255,.28)" stroke-width="9" stroke-dasharray="4 8"/>'
@@ -355,9 +356,9 @@ function heroHTML(T){
    +'<text x="64" y="60" text-anchor="middle" fill="#fff" font-size="28" font-weight="800" font-family="Public Sans,sans-serif">%'+pct+'</text>'
    +'<text x="64" y="80" text-anchor="middle" fill="rgba(255,255,255,.85)" font-size="12" font-family="Public Sans,sans-serif">harcanan</text></svg></div>'
    +'</div>'
-   +'<div class="heq"><span>Hesap:</span><span class="chip">'+tl(havuz)+'</span><span class="op">−</span><span class="chip">'+tl(ard)+'</span><span class="op">=</span><span class="chip '+(neg?'r':'g')+'">'+(neg?('− '+tl(Math.abs(kalan))):tl(kalan))+'</span>'
+   +'<div class="heq"><span>Hesap:</span><span class="chip">'+tl(havuz)+'</span><span class="op">−</span><span class="chip">'+tl(ard)+'</span><span class="op">−</span><span class="chip">'+tl(kom)+'</span><span class="op">=</span><span class="chip '+(neg?'r':'g')+'">'+(neg?('− '+tl(Math.abs(kalan))):tl(kalan))+'</span>'
    +((T.ardB||0)>0?'<span style="font-size:12px;color:rgba(255,255,255,.85);">· '+T.ardB+' kalem onay bekliyor</span>':'')
-   +'<span class="ayrik">Komisyonlar ('+tl(T.kom)+') bu hesaba DAHİL DEĞİL — ayrı hesap</span></div>'
+   +'<span class="ayrik">masraflar + komisyonlar gönderdiğin paradan düşülür</span></div>'
    +'</div>';
 }
 function cardHTML(sv,c){
@@ -412,8 +413,8 @@ function dashView(){
    +'<button class="nbtn" style="background:var(--red);box-shadow:0 3px 8px rgba(234,84,85,.45);" data-a="sevAc">'+ti("plus","font-size:14px")+'Yeni sevkiyat</button></div>';
   var kpis='<div class="kpis">'
    +'<div class="kpi"><div class="kico lbl-bad">'+ti("files")+'</div><div class="kv">'+T.dosya+'</div><div class="kl">Dosya · '+cnt.kont+' konteyner, '+cnt.air+' uçak</div></div>'
-   +'<div class="kpi klik'+(S.kpiPanel==="kom"?" on":"")+'" data-a="kpi" data-k="kom"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-warn">'+ti("cash")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl(T.kom)+'</div><div class="kl">Toplam komisyon · ayrı hesap</div></div>'
-   +'<div class="kpi klik'+(S.kpiPanel==="ode"?" on":"")+'" data-a="kpi" data-k="ode"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-info">'+ti("wallet")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl((T.ode||0)-(T.ard||0))+'</div><div class="kl">SENA\'da kalan paran</div></div>'
+   +'<div class="kpi klik'+(S.kpiPanel==="kom"?" on":"")+'" data-a="kpi" data-k="kom"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-warn">'+ti("cash")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl(T.kom)+'</div><div class="kl">Toplam komisyon · paradan düşülür</div></div>'   /* V27: "ayrı hesap" kalktı */
+   +'<div class="kpi klik'+(S.kpiPanel==="ode"?" on":"")+'" data-a="kpi" data-k="ode"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div class="kico lbl-info">'+ti("wallet")+'</div><i class="ti ti-chevron-down chev" aria-hidden="true"></i></div><div class="kv mono">'+tl((T.ode||0)-(T.ard||0)-(T.kom||0))+'</div><div class="kl">SENA\'da kalan paran</div></div>'   /* V27: komisyon da düşülür */
    +'<div class="kpi"><div class="kico lbl-warn">'+ti("clock")+'</div><div class="kv" style="color:#f18728;">'+T.uyari+'</div><div class="kl">Bekleyen işlem</div></div></div>';
   var kp='';
   /* V15: kom/ode panelleri artık HER ZAMAN üretilir — hem KPI tıklamasında (kp) hem Komisyonlar/Ödemeler sekmelerinde kullanılır */
